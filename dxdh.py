@@ -406,7 +406,7 @@ if __name__ == "__main__":
         print("当前小时为: "+str(h)+"已过14点开始准备抢凌晨")
         wttime= run_Time(23,58,58) #抢凌晨
     isTRUE=False
-    isTRUE=True                 #isTRUE等于False则表示忽略所有直接运行(14点后运行程序则会开始23点开启凌晨)
+    #isTRUE=True                 #isTRUE等于False则表示忽略所有直接运行(14点后运行程序则会开始23点开启凌晨)
     if(wttime >time.time()) :
         wTime=wttime-time.time()
         print("未到时间,计算后差异:"+str(wTime)+"秒") 
