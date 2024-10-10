@@ -28,6 +28,7 @@ diffValue=2
 '''
 变量: 手机号@服务密码
 多个变量&隔开
+corn 58 9,13,23 * * *
 '''
 MAX_RETRIES = 3
 RATE_LIMIT = 10  # 每秒请求数限制
