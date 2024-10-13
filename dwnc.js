@@ -28,7 +28,7 @@ let deviceTrait = 'iPhone'//自行添加
 let channel = 'App Store'//自行添加
 let SK = '9OrCGYc7Fqu8HmhE8c3F8MiZ5biQFrm3Gvc4kJSXbrQDfylpA6GLKDAtafS3GhTbEpsNmoNbmLTGN3DtyW3Ss9wW5j1v'//自行添加
 let shumeiId = '202405060736364a57c7e446cc9dc68debe4adb5f3624051b049edf02c10c0'//自行添加
-let uuid = '5d6bcfd08f7349039fd791cb522d2b29'//自行添加
+let uuid = 'UUID5d6bcfd08f7349039fd791cb522d2b29'//自行添加
 let deviceId = uuid
 let UserAgent = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148/duapp/5.52.1'//自行添加
 //---------------------------------------------------------
