@@ -23,7 +23,7 @@ let userIdx = 0;
 let userCount = 0;
 let shareCodeArr = []
 //---------------------- 自定义变量区域 -----------------------------------
-let ua = ''//自行添加
+let ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148/duapp/5.52.1'//自行添加
 let deviceTrait = 'iPhone'//自行添加
 let channel = 'App Store'//自行添加
 let SK = '9OrCGYc7Fqu8HmhE8c3F8MiZ5biQFrm3Gvc4kJSXbrQDfylpA6GLKDAtafS3GhTbEpsNmoNbmLTGN3DtyW3Ss9wW5j1v'//自行添加
