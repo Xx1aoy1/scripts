@@ -404,7 +404,7 @@ async def main(timeValue,isTRUE,hour):
             printn(f'{phone} 登录失败')
     await asyncio.gather(*tasks)
  
-PHONES=os.environ.get('PHONES1') or "18055666135@524525"     
+PHONES=os.environ.get('PHONES1') or "18888888888@123456"     
 if __name__ == "__main__":
     global timeValue,timeDiff
     h = datetime.datetime.now().hour
