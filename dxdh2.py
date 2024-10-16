@@ -419,8 +419,8 @@ if __name__ == "__main__":
     else:
         print("当前小时为: "+str(h)+"已过14点开始准备抢凌晨")
         wttime= run_Time(23,58,58) #抢凌晨
-    #isTRUE=False
-    isTRUE=True                
+    isTRUE=False
+    #isTRUE=True                
     #isTRUE等于False则表示忽略所有限制直接运行。这个参数一般用于测试。实际生产一定要设置为True。
     if(wttime >time.time()) :
         wTime=wttime-time.time()
