@@ -1,918 +1,1735 @@
+
 /**
- * 得物农场
- * cron 10 8,12,18,22 * * *  dwnc.js
- * scriptVersionNow = "0.0.1"
- * 浇水 签到 领取水滴 气泡水滴
- * 四个参数缺一不可
- * 得物APP => 购物 => 上方推荐 - 免费领好礼     抓app.dewu.com域名下headers参数                   找不到UUID 就是 deviceId
- * 找不到的话去 我 => 星愿森林 进入活动          抓app.dewu.com域名下headers参数                 x-auth-token去掉bearer
- * 抓app.dewu.com域名下headers参数               抓app.dewu.com域名下headers参数              x-auth-token   &    SK   &   shumeiId   &   uuid 多账号 @ 分割
- * ====================================
- *  
+ * cron 10 11 * * *
+ * 依赖 crypto-js & jsencrypt 
+ * 得物APP 探索中的玩一玩 所有游戏的入口都在那里  请跑任务之前手动玩一次
+ * --------------------------------------------------
+ * 变量名:dewuCK
+ * 变量值:抓app.dewu.com   请求头Headers中的x-auth-token  去掉Bearer # 连接cookie中dutoken得值 可以直接搜dutoken  # 连接SK
+
+
  */
 
+let ckName = "dewuCK";//CK变量名字
+
+
+const version = "testV1"
+const isPromiseAll = process.env["isPromiseAll"] ? process.env["isPromiseAll"] : "true";//是否开启并发
+let UAdefult = "Mozilla/5.0 (Linux; Android 10; MI 8 Lite Build/QKQ1.190910.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/80.0.3987.99 Mobile Safari/537.36/duapp/5.39.1(android;10)"
+let UA = process.env["UAdefult_dewu"] ? process.env["UAdefult_dewu"] : UAdefult
+let SK = process.env["SKdefult_dewu"] ? process.env["SKdefult_dewu"] : ""
 
 const $ = new Env("得物农场");
-const ckName = "dwnc_data";
-//-------------------- 一般不动变量区域 -------------------------------------
-const notify = $.isNode() ? require("./sendNotify") : "";
-const Notify = 1;     //0 关闭通知     1 打开通知
-let envSplitor = ["@", "\n"]; //多账号分隔符
-let msg;
-let userCookie = ($.isNode() ? process.env[ckName] : $.getdata(ckName)) || '';
-let userList = [];
+const notify = $.isNode() ? require('./sendNotify') : '';
+let envSplitor = ["&", "\n"]; //多账号分隔符
+let strSplitor = "#"; //多变量分隔符
 let userIdx = 0;
-let userCount = 0;
-let shareCodeArr = []
-let scriptVersionLatest; //最新版本
-let scriptVersionNow = '0.0.1'; //现在版本
-//---------------------- 自定义变量区域 -----------------------------------
-let ua = 'duapp/5.4.5(android;10)'
-let deviceTrait = 'MI+8+Lite'
-let channel = 'xiaomi'
-let UserAgent = 'Mozilla/5.0 (Linux; Android 10; MI 8 Lite Build/QKQ1.190910.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/81.0.4044.138 Mobile Safari/537.36/duapp/5.4.5(android;10)'
-//---------------------------------------------------------
-
-async function start() {
-    await getVersion('smallfawn/QLScriptPublic/main/dwnc.js')
-    console.log(`\n============ 当前版本：${scriptVersionNow} 📌 最新版本：${scriptVersionLatest} ============`);
-    console.log(`获取首账号助力码`);
-    taskall = [];
-    for (let user of userList) {
-        if (user.index == 1) {
-            //await $.wait(3000)
-            taskall.push(await user.share_code());
+let userList = [];
+let authShareCodeList = []
+let stationShareCodesList = []
+let zeroLotteryShareCodesModeGetList = []
+let helpCode = ""
+const CryptoJS = require("crypto-js");
+async function main() {
+    $.log(`并发状态:${isPromiseAll == "true" ? "[true]" : "[false]"}`)
+    let { body: shareCode } = await $.httpRequest({ timeout: 10000, method: "get", url: "https://gitee.com/smallfawn/Note/raw/main/updateTeam/dwnc.json", headers: { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_1_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148/duapp/5.38.6" } })
+    $.log(`当前版本:${version} 最新版本${shareCode.v}`)
+    if (version != shareCode.v) {
+        $.log(`当前版本和最新版本不一致`)
+        return
+    }
+    $.log(`[${shareCode.notice}]`);
+    authShareCodeList = shareCode.treeShareCodesList
+    stationShareCodesList = shareCode.stationShareCodesList
+    zeroLotteryShareCodesModeGetList = shareCode.zeroLotteryShareCodesModeGetList
+    let taskall = [];
+    $.log(`======= 🌳初始化邀请码 =======`)
+    for (let user in userList) {
+        if (userList[user].ckStatus) {
+            //如果user处于数组第一 那么则await 否则则promiseAll
+            if (user == 0) {
+                await userList[0].UserInit();
+            } else {
+                if (isPromiseAll == "true") {
+                    taskall.push(userList[user].UserInit());
+                } else {
+                    taskall.push(await userList[user].UserInit());
+                }
+            }
         }
     }
     await Promise.all(taskall);
-    shareCodeArr[0] = getMiddleValue('œ', 'œ', shareCodeArr[0])
-    console.log(shareCodeArr[0]);
-    console.log('\n================== 奖励 ==================\n');
-    taskall = [];
+    $.log(`======= 🌳果园 =======`)
     for (let user of userList) {
-        await $.wait(2000)
-        taskall.push(await user.tree_info());
+        if (user.ckStatus) {
+            if (isPromiseAll == "true") {
+                taskall.push(user.tree());
+            } else { taskall.push(await user.tree()); }
+        }
     }
     await Promise.all(taskall);
     taskall = [];
-    for (let user of userList) {
-        taskall.push(await user.task_list());
-        taskall.push(await user.task_signIn());
-    }
-    await Promise.all(taskall);
-    console.log('\n------------------ 执行任务 ------------------\n');
-    taskall = [];
-    for (let user of userList) {
-        await $.wait(3000)
-        taskall.push(await user.task_false());
-    }
-    await Promise.all(taskall);
-    console.log('\n------------------ 浇水 ------------------\n');
-    taskall = [];
-    for (let user of userList) {
-        await $.wait(3000)
-        taskall.push(await user.user_info());
-    }
-    console.log('\n------------------ 领取完成任务奖励 ------------------\n');
-    taskall = [];
-    for (let user of userList) {
-        await $.wait(3000)
-        taskall.push(await user.task_true());
-    }
-    await Promise.all(taskall);
-    console.log('\n------------------- [进度] -------------------\n');
-    taskall = [];
-    for (let user of userList) {
-        await $.wait(3000)
-        taskall.push(await user.get_tree());
-    }
-    await Promise.all(taskall);
+    $.log(`======= 🐟鱼厂 =======`)
 
+    for (let user of userList) {
+        if (user.ckStatus) {
+            if (isPromiseAll == "true") {
+                taskall.push(user.fish());
+            } else {
+                taskall.push(await user.fish());
+            }
+        }
+    }
+    await Promise.all(taskall);
+    taskall = [];
+    $.log(`======= 上上签💴 =======`)
+    for (let user of userList) {
+        if (user.ckStatus) {
+            if (isPromiseAll == "true") {
+                taskall.push(user.station());
+            } else {
+                taskall.push(await user.station());
+            }
 
+        }
+    }
+    await Promise.all(taskall);
+    taskall = [];
+    $.log(`======= 0元抽💴 =======`)
+    for (let user of userList) {
+        if (user.ckStatus) {
+            if (isPromiseAll == "true") {
+                taskall.push(user.zeroLottery());
+            } else {
+                taskall.push(await user.zeroLottery());
+            }
+        }
+    }
+    await Promise.all(taskall);
+    taskall = [];
+    $.log(`=======  抽盲盒  =======`)
+    for (let user of userList) {
+        if (user.ckStatus) {
+            if (isPromiseAll == "true") {
+                taskall.push(user.buZhou());
+            } else {
+                taskall.push(await user.buZhou());
+            }
+        }
+    }
+    await Promise.all(taskall);
+    $.log(`======= 潮金币 =======`)
+    taskall = [];
+    for (let user of userList) {
+        if (user.ckStatus) {
+            if (isPromiseAll == "true") {
+                taskall.push(user.point());
+            } else {
+                taskall.push(await user.point());
 
-
+            }
+        }
+    }
+    await Promise.all(taskall);
 
 }
-
-class UserInfo {
+class Task {
     constructor(str) {
         this.index = ++userIdx;
-        this.XAToken = str.split('&')[0];
-        this.SK = str.split('&')[1];
-        if (this.XAToken.indexOf('Bearer') !== -1) {
-            this.XAToken = this.XAToken.replace('Bearer', '')
-        } else {
-            this.XAToken = str.split('&')[0];
-        }
-        this.shumeiId = str.split('&')[2];
-        this.uuid = str.split('&')[3];
-        this.deviceId = str.split('&')[3];
-        this.shareCode = null
-        this.hours = local_hours();
-        this.ckStatus = null
-        this.taskList = []
-        this.extraAwardList = []
-        this.userStep = null
-        this.headersPost = {
-            Host: 'app.dewu.com',
-            'x-auth-token': "Bearer " + this.XAToken,
-            'Content-Type': 'application/json',
-            'ua': ua,
-            'deviceTrait': deviceTrait,
-            'channel': channel,
-            'SK': this.SK,
-            'shumeiId': this.shumeiId,
-            'uuid': this.uuid,
-            'deviceId': this.deviceId,
-            'User-Agent': UserAgent
-        };
-        this.headersGet = {
-            Host: 'app.dewu.com',
-            'x-auth-token': "Bearer " + this.XAToken,
-            'ua': ua,
-            'deviceTrait': deviceTrait,
-            'channel': channel,
-            'SK': this.SK,
-            'shumeiId': this.shumeiId,
-            'uuid': this.uuid,
-            'deviceId': this.deviceId,
-            'User-Agent': UserAgent
-        }
+        this.ck = str.split(strSplitor)[0]; //单账号多变量分隔符
+        this.ckStatus = true;
+        this.taskListTree = []
+        this.doWaterStatus = true
+        this.taskListFish = []
+        this.fishFeedStatus = true
+        this.fishId = ""
+        this.fishType = ""
+        this.stationList = [];
+        this.duToken = str.split(strSplitor)[1];
+        this.sk = str.split(strSplitor)[2];
+        this.prizeLocations = []
+        this.BuZhouRefreshStatus = false
+        this.chanceCount = 0
+        this.waitPrizeLocations = []
+        this.ua = UA
+        //this.sk = SK
+    }
+    async tree() {
+        await this.Dowater()
+        await $.wait(2500)
+        await this.TreeInviteReward()
+        await $.wait(1500)
+        await this.Get_Tree_Info()
+        await $.wait(1500)
+        await this.TreeInfo()
+        await $.wait(1500)
+        await this.SignListTree()
+        await $.wait(1500)
+        await this.TaskListTree();
+        await $.wait(1500)
+        await this.Droplet_Get_Generate_Droplet()
+        await $.wait(1500)
+        await this.Droplet_ExtraInfo()
+    }
+    async fish() {
+        await this.SignListFish()
+        await $.wait(2500)
+        await this.TaskListFish()
+        await $.wait(2500)
+        await this.UserFinshInfo()
+
+
+
 
     }
-    //1查询奖品
-    //2获取任务列表
-    //3执行任务
-    //4获取农场剩余水滴信息
-    //5浇水
-    //6领取奖励
-    async tree_info() {
-        try {
-            let options = {
-                method: 'GET',
-                url: 'https://app.dewu.com/hacking-tree/v1/user/target/info?sign=fe26befc49444d362c8f17463630bdba',
-                headers: this.headersGet
-            };
-            //console.log(options);
-            let result = await httpRequest(options);
-            //console.log(result);
-
-            if (result.code == 200) {
-                this.ckStatus = true
-                console.log(`账号[${this.index}]  查询奖励[${result.msg}] [${result.data.name}] 当前等级[${result.data.level}]`);
-            } else {
-                this.ckStatus = false
-                console.log(`账号[${this.index}]  查询奖励失败了呢`);
-                console.log(result);
-            }
-        } catch (error) {
-            console.log(error);
-        }
-    }
-
-    async user_info() { // 农场水滴剩余 和信息
-        try {
-            let options = {
-                method: 'POST',
-                url: 'https://app.dewu.com/hacking-tree/v1/user/init?sign=c921f91a4c0b7ca7f1640adcb16eb239',
-                headers: this.headersPost,
-            };
-            if (this.index == 1) {
-                let shareCodes = await getShareCodes('dwnc')
-                options['body'] = JSON.stringify({ keyword: shareCodes })
-            } else {
-                options['body'] = JSON.stringify({ keyword: shareCodeArr[0] })
-            }
-            //console.log(options);
-            let result = await httpRequest(options);
-            //console.log(result);
-            if (result.code == 200) {
-                DoubleLog(`账号[${this.index}]  [${result.msg}]  剩余水滴[${result.data.droplet}g]`);
-                if (result.data.droplet > 0) {
-                    console.log(`账号[${this.index}]  判断当前可浇水${parseInt(result.data.droplet / 80)}次,开始浇水`);
-                    for (let i = 0; i < parseInt(result.data.droplet / 80); i++) {
-                        await this.task_watering("浇水")
-                        await $.wait(3000)
-                    }
+    async station() {
+        for (let i of stationShareCodesList) {
+            await $.wait(1500)
+            let shareKey = await this.ShareCodesGet(i)
+            if (shareKey != '') {
+                let id = shareKey.split("id=")[1].split("&")[0]
+                let userId = shareKey.split("shareUserId=")[1].split("&")[0]
+                let status = await this.StationAssist(id, userId)
+                if (status) {
+                    break;
                 }
             } else {
-                DoubleLog(`账号[${this.index}]  农场信息查询失败:原因未知`);
-                console.log(result);
             }
-        } catch (error) {
-            console.log(error);
-        }
-    }
 
-    async task_list() { // 任务列表
-        try {
-            let options = {
-                method: 'GET',
-                url: 'https://app.dewu.com/hacking-tree/v1/task/list?sign=fe26befc49444d362c8f17463630bdba',
-                headers: this.headersGet
-            };
-            //console.log(options);
-            let result = await httpRequest(options);
-            //console.log(result);
-            if (result.code == 200) {// 把获取到的任务列表 给对象
-                let taskListArr = result.data.taskList
-                for (let i in taskListArr) {
-                    let taskObject = {}
-                    taskObject['classify'] = taskListArr[i].classify
-                    taskObject['taskId'] = taskListArr[i].taskId //任务ID
-                    taskObject['taskName'] = taskListArr[i].taskName //任务名字
-                    taskObject['isComplete'] = taskListArr[i].isComplete //是否未完成
-                    taskObject['isReceiveReward'] = taskListArr[i].isReceiveReward //完成后是否领取奖励
-                    taskObject['taskType'] = taskListArr[i].taskType //任务类型
-                    taskObject['rewardCount'] = taskListArr[i].rewardCount //完成任务所获得的奖励水滴
-                    taskObject['isObtain'] = taskListArr[i].isObtain //是否完成任务前置要求
-                    taskObject['jumpUrl'] = taskListArr[i].jumpUrl //是否完成任务前置要求
-                    this.taskList.push(taskObject)
-                }
-                this.extraAwardList = result.data.extraAwardList
-                this.userStep = result.data.userStep //累计浇水奖励
-                //console.log(`即将输出未完成的任务列表`);
-                //console.log(this.taskList);
-                //console.log(this.extraAwardList);
-            } else {
-                console.log(`账号[${this.index}]  获取任务列表失败了呢`);
-                console.log(result);
-            }
-        } catch (error) {
-            console.log(error);
         }
-    }
+        await this.StationList()
+        for (let j of this.stationList) {
+            await $.wait(2000)
+            await this.StationEgnageIn(j.id)
+        }
 
-    async task_false() { // 查看未完成的任务且执行
-        console.log(`账号[${this.index}]  正在尝试完成所有任务`);
-        //console.log(this.taskList);
-        for (let i in this.taskList) {
-            let isComplete = this.taskList[i].isComplete
-            let taskId = this.taskList[i].taskId
-            let taskName = this.taskList[i].taskName
-            let taskType = this.taskList[i].taskType
-            //let classify = this.taskList[i].classify
-            let jumpUrl = this.taskList[i].jumpUrl
-            let rewardCount = this.taskList[i].rewardCount
-            if (isComplete == false) {
-                if (taskType == 49) {
-                    console.log(`账号[${this.index}]  [${taskName}] --- 执行`);//签到
-                    await this.task_signIn2()  //提交完成任务 commit https://app.dewu.com/hacking-task/v1/task/commit?sign=34c4ac7855b7c592469c9d147483c2ea
-                    //post传参taskId 和 taskType {}
-                    await this.task_commit({ taskId: taskId, taskType: taskType.toString() })
-                }
-                let taskIdObject = {
-                    "multi_times": async () => {
-                        if (Number(this.hours) == 8 || Number(this.hours) == 12 || Number(this.hours) == 18 || Number(this.hours) == 22) {
-                            console.log(`账号[${this.index}]  检测当前到达任务时间节点,开始执行任务`);
-                            await this.task_receive(1, "multi_times")//领取
-                        } else {
-                            console.log(`账号[${this.index}]  检测未到达任务时间节点,不执行该任务`);
-                        }
-                        console.log(`账号[${this.index}]  时间段领水`);
-                    },
-                    'revisit': async () => { //做任务浏览【我】的右上角星愿森林入口  classify 1
-                        //console.log(`特定任务${taskName}`);
-                    },
-                    "1": async () => { //做任务一 完成五次浇灌 classify 1
-                        //console.log(`特定任务${taskName}`);
-                    },
-                    "2": async () => {//做任务二 从购买页进入心愿森林 classify 1
-                        //console.log(`特定任务${taskName}`);
-                        //await this.task_receive(1, "2")
-                    },
-                    "3": async () => {//做任务三 查看一次聊一聊 classify 1
-                        // console.log(`特定任务${taskName}`);
-                        //await this.task_receive(1, "3")
-                    },
-                    "4": async () => {//做任务四 收集一次水滴生产 classify 1
-                        //console.log(`特定任务${taskName}`);
-                        //await this.task_receive(1, "4")
-                    },
-                }
-                if (taskId in taskIdObject) {
-                    await taskIdObject[taskId]()
-                } else {
-                    let btd = getMiddleValue('btd=', '&', jumpUrl)
-                    btd = Number(btd)
-                    //console.log(`JUMP URL 数据${jumpUrl}`);
-                    //console.log(`BTD 数据${btd}`);
-                    let taskTypeIfObject = {
-                        1: async () => {
-                            if (taskName.indexOf('晒图') !== -1) {
-                                console.log(`账号[${this.index}]  [${taskName}] --- 执行`);//晒图
-                                await this.task_commit_pre({ taskId: taskId, taskType: taskType })
-                                await $.wait(16000)
-                                await this.task_commit({ taskId: taskId, taskType: taskType.toString(), activityType: null, activityId: null, taskSetId: null, venueCode: null, venueUnitStyle: null, taskScene: null })
-                            } else if (taskName.indexOf('国潮') !== -1) {
-                                console.log(`账号[${this.index}]  [${taskName}] --- 执行`);//国潮
-                                await this.task_commit_pre({ taskId: taskId, taskType: taskType, btd: null })
-                                await $.wait(16000)
-                                await this.task_commit({ taskId: taskId, taskType: taskType.toString(), activityType: null, activityId: null, taskSetId: null, venueCode: null, venueUnitStyle: null, taskScene: null, btd: null })
-                            } else {
-                                console.log(`账号[${this.index}]  [${taskName}] --- 执行`);
-                                await this.task_commit_pre({ taskId: taskId, taskType: taskType, btd: btd })//逛逛
-                                await $.wait(16000)
-                                await this.task_commit({ taskId: taskId, taskType: taskType.toString(), activityType: null, activityId: null, taskSetId: null, venueCode: null, venueUnitStyle: null, taskScene: null, btd: btd })
-                            }
-                        },
-                        16: async () => {
-                            console.log(`账号[${this.index}]  [${taskName}] --- 执行`);//参与0元抽奖
-                            await this.task_commit({ taskType: taskType.toString(), taskId: taskId, })
-                        },
-                        43: async () => {
-                            console.log(`账号[${this.index}]  [${taskName}] --- 执行`);//参与上上签
-                            await this.task_commit({ taskType: taskType.toString(), taskId: taskId })
-                        },
-                        47: async () => {
-                            console.log(`账号[${this.index}]  [${taskName}] --- 执行`);//订阅
-                            await this.task_commit({ taskId: taskId, taskType: taskType.toString(), btd: btd })
-                        },
-                        50: async () => {
-                            console.log(`账号[${this.index}]  [${taskName}] --- 执行`);//收藏
-                            await this.task_commit({ taskId: taskId, taskType: taskType.toString(), btd: btd, spuId: 0 })
-                        },
-                        123: async () => {
-                            console.log(`账号[${this.index}]  [${taskName}] --- 执行`);//从组件访问农场
-                            await this.task_commit({ taskType: taskType.toString() })
-                        },
-                        251: async () => { //会场水滴大放送
-                            if (rewardCount !== 10000) {
-                                console.log(`账号[${this.index}]  [${taskName}] --- 执行`);//会场水滴大放送
-                                await this.task_obtain(taskId, taskType)
-                                //console.log(`延迟6s`);
-                                await $.wait(6000)
-                                await this.task_commit_pre({ taskId: taskId, taskType: 16 })
-                                //console.log(`延迟16s`);
-                                await $.wait(16000)
-                                await this.task_commit({ taskId: taskId, taskType: taskType.toString() })
-                            }
-                        },
-                    }
-                    if (taskType in taskTypeIfObject) {
-                        await taskTypeIfObject[taskType]()
-                    }
-                }
-            }
-        }
     }
-    async task_true() { // 查询完成任务 && 未领取的任务
-        await this.task_list()
-        for (let i in this.extraAwardList) {
-            if (this.extraAwardList[i].status == 1) {
-                console.log(`账号[${this.index}]  领取累计任务奖励`);
-                await this.task_extra(this.extraAwardList[i].condition)
-            } else {
-
-            }
-        }
-        await this.task_watering_reward()//
-        await this.droplet_extra_info()
-        await this.get_generate_droplet()
-        let halfLength = Math.ceil(this.taskList.length / 2);
-        this.taskList = this.taskList.slice(halfLength);
-        for (let i in this.taskList) {
-            if (this.taskList[i].isReceiveReward == true) {
-                console.log(`账号[${this.index}]  [${this.taskList[i].taskName}] --- 已领取`);
-            } else {
-                await this.task_receive(this.taskList[i].classify, this.taskList[i].taskId, this.taskList[i].taskType)
-            }
-        }
-        //await wait(1); //延迟
-    }
-    async task_obtain(taskId, taskType) { // 任务列表前置 OBTAIN
-        try {
-            let options = {
-                method: 'POST',
-                url: 'https://app.dewu.com/hacking-task/v1/task/obtain',
-                headers: this.headersPost,
-                body: JSON.stringify({ taskId: taskId, taskType: taskType }),
-            };
-            //console.log(options);
-            let result = await httpRequest(options);
-            if (result.code == 200) {
-                if (result.status == 200) {
-                    return true
-                    //DoubleLog(`账号[${this.index}]  任务前置[${result.msg}]`);
+    async zeroLottery() {
+        await this.zeroLotteryWinList()
+        await this.zeroLotteryList()
+        for (let j of zeroLotteryShareCodesModeGetList) {
+            await $.wait(1500)
+            let shareKey = await this.ShareCodesGet(j)
+            if (shareKey != '') {
+                shareKey = decodeURIComponent(shareKey.split("shareKey=")[1].split("&")[0])
+                let status = await this.zeroLotteryShare(shareKey)
+                if (status) {
+                    break;
                 }
             } else {
-                //DoubleLog(`账号[${this.index}]  任务前置失败:原因未知`);
-                console.log(result);
-                return false
             }
-            //console.log(result);
-        } catch (error) {
-            console.log(error);
         }
-    }
-    async task_commit_pre(body) {
-        // 任务 开始  且等待16s TaskType有变化  浏览15s会场会变成16
-        try {
-            let options = {
-                method: 'POST',
-                url: `https://app.dewu.com/hacking-task/v1/task/pre_commit`,
-                headers: this.headersPost,
-                body: JSON.stringify(body),
-            };
 
-            let result = await httpRequest(options);
-            if (result.code == 200) {
-                //DoubleLog(`账号[${this.index}]  任务开始${result.msg}${result.data.isOk}`);
-                return true
-            } else {
-                //DoubleLog(`账号[${this.index}]  任务开始失败:原因未知`);
-                //console.log(options);
-                console.log(result);
-                return false
-            }
-        } catch (error) {
-            console.log(error);
-        }
     }
-    async task_commit(body) { // 任务完成时提交状态
-        let options = {
-            method: 'POST',
-            url: 'https://app.dewu.com/hacking-task/v1/task/commit',
-            headers: this.headersPost,
-            body: JSON.stringify(body)
-        }
-        try {
-            let result = await httpRequest(options);
-            //console.log(result);
-            if (result.code == 200) {
-                //DoubleLog(`账号[${this.index}]  提交任务完成状态[${result.msg}]`);
-                return true
-            } else {
-                //DoubleLog(`账号[${this.index}]  任务结束[${result.msg}]:原因未知`);
-                //console.log(options);
-                console.log(result);
-                return false
-            }
-
-        } catch (error) {
-            console.log(error);
-        }
-    }
-    async task_signIn() { // 签到 领取水滴
-        try {
-            let signIn_info = await httpRequest({
-                method: 'GET',
-                url: 'https://app.dewu.com/hacking-tree/v1/sign/list?sign=fe26befc49444d362c8f17463630bdba',
-                headers: this.headersGet,
-            })
-            if (signIn_info.data.list[Number(signIn_info.data.currentDay) - 1].IsSignIn == false) {
-                let options = {
-                    method: 'POST',
-                    url: 'https://app.dewu.com/hacking-tree/v1/sign/sign_in?sign=fe26befc49444d362c8f17463630bdba',
-                    headers: this.headersPost,
-                    body: JSON.stringify({}),
-                };
-                //console.log(options);
-                let result = await httpRequest(options);
-                //console.log(result);
-                if (result.code == 200) {
-                    DoubleLog(`账号[${this.index}]  签到领取水滴[${result.msg}] --- [${result.data.Num}]`);
-                } else if (result.code == 711110001) {
-                    DoubleLog(`账号[${this.index}]  签到领取水滴[${result.msg}]`);
-                    console.log(result);
-                } else {
-                    DoubleLog(`账号[${this.index}]  签到领取水滴失败:原因未知`);
-                    console.log(result);
-                }
-            } else {
-                console.log(`账号[${this.index}]  今日已签到获得水滴`);
-            }
-
-        } catch (error) {
-            console.log(error);
-        }
-    }
-    async task_signIn2() { // 签到 领取水滴
-        try {
-            let options = {
-                method: 'POST',
-
-                url: `https://app.dewu.com/hacking-game-center/v1/sign/sign?sign=fe26befc49444d362c8f17463630bdba`,
-                headers: this.headersPost,
-                body: JSON.stringify({})
-            }
-            //console.log(options);
-            let result = await httpRequest(options);
-            //console.log(result);
-            if (result.code == 200) {
-                console.log(`账号[${this.index}]  签到[${result.msg}] --- [${result.data.coins}]`);
-            } else {
-                console.log(`账号[${this.index}]  签到失败`);
-                console.log(result);
-            }
-        } catch (error) {
-            console.log(error);
-        }
-    }
-    async task_watering() { // 浇水 一次40g /80g
+    async buZhou() {
+        await this.BuZhouTaskList()
         await $.wait(2000)
+        await this.BuZhouInfo()
+        await $.wait(2000)
+        await this.BuZhouInfo()
+    }
+    async point() {
+        await this.PonitSignIn()
+        await this.PointTaskList()
+    }
+    async DoTask(body) {
         try {
-            let options = {
-                method: 'POST',
-                url: 'https://app.dewu.com/hacking-tree/v1/tree/watering?sign=fe26befc49444d362c8f17463630bdba',
-                headers: this.headersPost,
-                body: JSON.stringify({}),
-            };
-            //console.log(options);
-            let result = await httpRequest(options);
-            //console.log(result);
-            if (result.code == 200) {
-                if (result.data.wateringReward !== null) {
-                    DoubleLog(`账号[${this.index}]  浇水[${result.msg}] --- [${result.data.wateringReward.rewardNum}g]`);
+            let taskStatusResult = {};
+            let commitBody = {};
+            let preStatus = false
+            if (body.taskType == 50) {
+                taskStatusResult = await this.taskRequest_task("get", `https://app.dewu.com/hacking-task/v1/task/status?taskId=${body.taskId}&taskType=50&sign=94fd23c93d62ae0f75108f94c093b198`)
+                if (taskStatusResult.code == 200) {
+                    if (taskStatusResult.data.status == 1) {
+                        //$.log(`账号[${this.index}] 开始任务成功🎉`)
+                        commitBody = { "taskId": body.taskId, "taskType": String(body.taskType), "btd": 0, spuId: 0 }
+                        preStatus = true
+                    }
+                }
+            }
+            if (body.taskType == 1) {
+                if ("classify" in body) {
+                    if (body.classify == 2) {
+                        taskStatusResult = await this.taskRequest_task("post", `https://app.dewu.com/hacking-task/v1/task/pre_commit?sign=b7382f4d908e04356f9646688afe096c`, { taskId: body.taskId, taskType: body.taskType, btn: 0 })
+                        //console.log(taskStatusResult);
+                        if (taskStatusResult.code == 200) {
+                            if (taskStatusResult.data.isOk == true) {
+                                //$.log(`账号[${this.index}] 开始任务成功🎉`)
+                                $.log(`延迟${body.countdownTime + 1}秒浏览${body.taskName}`)
+                                await $.wait((body.countdownTime + 1) * 1000)
+                                commitBody = { "taskId": body.taskId, "taskType": String(body.taskType), "activityType": null, "activityId": null, "taskSetId": null, "venueCode": null, "venueUnitStyle": null, "taskScene": null, "btd": 0 }
+                                preStatus = true
+                            }
+                        } else {
+                            $.log(`❌账号[${this.index}] 开始任务失败[${taskStatusResult.msg}]`);
+                        }
+                    }
                 } else {
-                    DoubleLog(`账号[${this.index}]  浇水[${result.msg}]`);
+                    /*taskStatusResult = await this.taskRequest_task("post", `https://app.dewu.com/hacking-task/v1/task/pre_commit?sign=b7382f4d908e04356f9646688afe096c`, { taskId: body.taskId, taskType: body.taskType, btn: 0 })
+                    if (taskStatusResult.code == 200) {
+                        if (taskStatusResult.data.isOk == true) {
+                            //$.log(`账号[${this.index}] 开始任务成功🎉`)
+                            await $.wait(16000)
+                            commitBody = { "taskId": body.taskId, "taskType": body.taskType, "activityType": null, "activityId": null, "taskSetId": null, "venueCode": null, "venueUnitStyle": null, "taskScene": null, "btd": 0 }
+                            preStatus = true
+                        }
+                    } else {
+                        $.log(`❌账号[${this.index}] 开始任务失败[${taskStatusResult.msg}]`);
+                    }*/
                 }
-            } else if (result.code == 711110001) {
-                DoubleLog(`账号[${this.index}]  浇水[${result.msg}]`);
-                console.log(result);
-            } else {
-                DoubleLog(`账号[${this.index}]  浇水失败:原因未知`);
-                console.log(result);
-            }
-        } catch (error) {
-            console.log(error);
-        }
-    }
-    async task_watering_reward() { // 累计浇水奖励
-        try {
-            let options = {
-                method: 'POST',
-                url: 'https://app.dewu.com/hacking-tree/v1/tree/get_watering_reward?sign=1baeffad64b921f648851686f2a4b614',
-                headers: this.headersPost,
-                body: JSON.stringify({ promote: '' }),
-            };
-            //console.log(options);
-            let result = await httpRequest(options);
-            //console.log(result);
-            if (result.code == 200) {
-                DoubleLog(`账号[${this.index}]  领取累计浇水奖励[${result.msg}] --- [${result.data.rewardNum}g]`);
-            } else if (result.code == 711070005) {
-                DoubleLog(`账号[${this.index}]  领取累计浇水奖励[${result.msg}]`);
-                //console.log(result);
-            } else {
-                DoubleLog(`账号[${this.index}]  领取累计浇水奖励失败:原因未知`);
-                console.log(result);
-            }
-        } catch (error) {
-            console.log(error);
-        }
-    }
 
-    async task_receive(classify, taskId, taskType) { // 领取水滴任务列表的水滴
-        let options = {
-            method: 'POST',
-            url: 'https://app.dewu.com/hacking-tree/v1/task/receive',
-            headers: this.headersPost
-        }
-        let result
-        try {
-            if (taskType == 251) {
-                options.body = JSON.stringify({ classify: classify, taskId: taskId, completeFlag: 1 })
-                //console.log(options);
-                result = await httpRequest(options);
-            } else {
-                options.body = JSON.stringify({ classify: classify, taskId: taskId })
-                //console.log(options);
-                result = await httpRequest(options);
-            }
-            //console.log(result);
-            if (result.code == 200) {
-                DoubleLog(`账号[${this.index}]  领取任务奖励[${result.msg}] --- [${result.data.num}g]`);
-            } else if (result.code == 711020001) {
-                //DoubleLog(`账号[${this.index}]  领取[${result.msg}]`);
-                //console.log(result);
-            } else {
-                DoubleLog(`账号[${this.index}]  领取[${result.msg}]`);
-                //console.log(result);
-            }
-        } catch (error) {
-            console.log(error);
-        }
-    }
 
-    async task_extra(condition) { // 领取水滴任务累计奖励
-        try {
-            let options = {
-                method: 'POST',
-                url: 'https://app.dewu.com/hacking-tree/v1/task/extra?sign=a2819c40ac9229d10c134e773fff6eb3',
-                headers: this.headersPost,
-                body: JSON.stringify({ condition: condition }),
-            };
-            //console.log(options);
-            let result = await httpRequest(options);
-            //console.log(result);
-            if (result.code == 200) {
-                DoubleLog(`账号[${this.index}]  领取累计奖励[${result.msg}] --- [${result.data.num}g]`);
-            } else if (result.code == 711020001) {
-                DoubleLog(`账号[${this.index}]  领取累计奖励失败:${result.msg}`);
-                //console.log(result);
-            } else {
-                DoubleLog(`账号[${this.index}]  领取累计奖励失败:原因未知`);
-                console.log(result);
             }
-        } catch (error) {
-            console.log(error);
-        }
-    }
-
-    async droplet_extra_info() { // 气泡水滴
-        try {
-            let options = {
-                method: 'GET',
-                url: 'https://app.dewu.com/hacking-tree/v1/droplet-extra/info?sign=fe26befc49444d362c8f17463630bdba',
-                headers: this.headersGet
-            };
-            //console.log(options);
-            let result = await httpRequest(options);
-            //console.log(result);
-
-            if (result.code == 200) {
-                if ("onlineExtra" in result.data) {
-                    console.log(`账号[${this.index}]  气泡水滴已满,今日可领取 --- [${result.data.onlineExtra.totalDroplet}]g`);
-                    await this.droplet_extra_receive();
-                } else if (result.data.dailyExtra) {
-                    console.log(`账号[${this.index}]  气泡水滴未满,不可领取,明日再来领取吧！目前已经积攒了 --- [${result.data.dailyExtra.totalDroplet}]g水滴呢!"`);
+            if (body.taskType == 123 || body.taskType == 124) {
+                commitBody = { "taskType": String(body.taskType) }
+                preStatus = true
+            }
+            //console.log(taskStatusResult)
+            if (preStatus == true) {
+                let commitResult = await this.taskRequest_task("post", `https://app.dewu.com/hacking-task/v1/task/commit?sign=826988b593cd8cd75162b6d3b7dade15`, commitBody)
+                //console.log(commitResult)
+                if (commitResult.code == 200) {
+                    if (commitResult.data.status == 2) {
+                        $.log(`账号[${this.index}] [${body.taskName}]任务成功🎉`)
+                        return true
+                    } else {
+                        $.log(`账号[${this.index}] [${body.taskName}]任务失败🎉`)
+                    }
+                } else {
+                    $.log(`账号[${this.index}] [${body.taskName}]任务失败🎉`)
                 }
             } else {
-                console.log(`账号[${this.index}] 查询气泡水滴失败了呢`);
+                return false
             }
-        } catch (error) {
-            console.log(error);
+        } catch (e) {
+            console.log(e);
         }
+
     }
-    async droplet_extra_receive() { // 领取气泡水滴
+    async StationAssist(id, shareUserId) {
+        let body = { "id": id, "shareUserId": shareUserId }
         try {
-            let options = {
-                method: 'POST',
-                url: 'https://app.dewu.com/hacking-tree/v1/droplet-extra/receive?sign=fe26befc49444d362c8f17463630bdba',
-                headers: this.headersPost,
-                body: JSON.stringify({}),
-            };
-            //console.log(options);
-            let result = await httpRequest(options);
-            //console.log(result);
+            let result = await this.taskRequest("post", `https://app.dewu.com/api/v1/h5/delicate-sell-interfaces/dsell/station/assist?sign=${this.calculateSign(body)}`, body)
             if (result.code == 200) {
-                DoubleLog(`账号[${this.index}]  领取气泡水滴[${result.msg}] --- [${result.data.totalDroplet}g]`);
-            } else if (result.code == 711030002) {
-                DoubleLog(`账号[${this.index}]  领取气泡水滴[${result.msg}]`);
-                //console.log(result);
+                //$.log(`账号[${this.index}] 助力参与作者组队上上签成功🎉`)
+                return true
             } else {
-                DoubleLog(`账号[${this.index}]  领取气泡水滴失败:原因未知`);
-                console.log(result);
-            }
-        } catch (error) {
-            console.log(error);
-        }
-    }
-    async get_generate_droplet() { // 领取小木桶水滴
-        try {
-            let options = {
-                method: 'POST',
-                url: 'https://app.dewu.com/hacking-tree/v1/droplet/get_generate_droplet?sign=fe26befc49444d362c8f17463630bdba',
-                headers: this.headersPost,
-                body: JSON.stringify({}),
-            };
-            //console.log(options);
-            let result = await httpRequest(options);
-            //console.log(result);
-            if (result.code == 200) {
-                DoubleLog(`账号[${this.index}]  领取小木桶积攒水滴[${result.msg}] --- [${result.data.droplet}g]`);
-            } else if (result.code == 711070009) {
-                DoubleLog(`账号[${this.index}]  领取小木桶积攒水滴[${result.msg}]`);
-                //console.log(result);
-            } else {
-                DoubleLog(`账号[${this.index}]  领取小木桶积攒水滴:原因未知`);
+                //$.log(`❌账号[${this.index}] 助力参与作者组队上上签失败[${result.msg}]`);
+                return false
                 //console.log(result);
             }
-        } catch (error) {
-            console.log(error);
+        } catch (e) {
+            console.log(e);
         }
     }
-
-
-    async share_code() { // 获取助力码
+    async zeroLotteryEgnageIn(id) {
+        let body = { "id": id, "source": "wotab" }
         try {
-            let options = {
-                method: 'POST',
-                url: 'https://app.dewu.com/hacking-tree/v1/keyword/gen?sign=fe26befc49444d362c8f17463630bdba',
-                headers: this.headersPost,
-                body: JSON.stringify({}),
+            let result = await this.taskRequest_task("post", `https://app.dewu.com/hacking-zero-lottery/v1/activity/engage-in?sign=${this.calculateSign(body)}`, body)
+            if (result.code == 200) {
+                $.log(`账号[${this.index}] 0元抽签参与成功[${result.data.title}]🎉`)
+            } else {
+                $.log(`❌账号[${this.index}] 0元抽签0参与失败[${result.msg}]`);
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async ShareCodesGet(key) {
+        try {
+            let result = await this.taskRequest_task("get", `https://app.dewu.com/hacking-keyword/v1/common/keyword/share-info?keyword=${key}`)
+            if (result.code == 200) {
+                if (result.data !== null) {
 
-            };
-            //console.log(options);
-            let result = await httpRequest(options);
+                    return result.data.activityInfo.enterUrl
+
+
+
+                } else {
+                    return ''
+                }
+            } else {
+
+                $.log(`❌账号[${this.index}] 助力参与0元购失败[${result.msg}]🎉`)
+                return ''
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async zeroLotteryShare(key) {
+
+        let body = { "shareKey": key }
+        try {
+            let result = await this.taskRequest_task("post", `https://app.dewu.com/hacking-zero-lottery/v1/activity/report-keyword?sign=${this.calculateSign(body)}`, body)
+            if (result.code == 200) {
+                //$.log(`账号[${this.index}] 助力参与0元购成功🎉`)
+                return true
+            } else {
+                //$.log(`❌账号[${this.index}] 助力参与0元购失败[${result.msg}]🎉`)
+                return false
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async zeroLotteryWinList() {
+        let body = { "limit": 10, "lastId": 0 }
+        try {
+            let result = await this.taskRequest_task("post", `https://app.dewu.com/hacking-zero-lottery/v1/activity/engage-in-list`, body)
+            if (result.code == 200) {
+                if (result.data?.list) {
+                    for (let i of result.data.list) {
+                        // ...
+                        if (i.win == true) {
+                            $.log(`账号[${this.index}] 恭喜中签[${i.name}]🎉🎉🎉🎉🎉🎉🎉🎉`)
+                        }
+                    }
+                }
+
+
+            } else {
+                $.log(`❌账号[${this.index}] 获取0元购列表失败[${result.msg}]🎉`)
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async zeroLotteryList() {
+        let body = { "source": "wotab" }
+        try {
+            let result = await this.taskRequest_task("post", `https://app.dewu.com/api/v1/h5/zero-lottery-interfaces/zl/activity/query-today?sign=${this.calculateSign(body)}`, body)
+            if (result.code == 200) {
+                for (let i of result.data.activityList) {
+                    let taskStatus = false
+                    if (i.status == 0) {
+                        if ("taskVo" in i) {
+                            await this.DoTask(i.taskVo)
+
+                        } else {
+                            await this.zeroLotteryEgnageIn(i.id)
+                        }
+                    }
+                }
+            } else {
+                $.log(`❌账号[${this.index}] 获取0元购列表失败[${result.msg}]🎉`)
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async StationEgnageIn(id) {
+        let body = { "id": id }
+        try {
+            let result = await this.taskRequest_task("post", `https://app.dewu.com/api/v1/h5/delicate-sell-interfaces/dsell/station/egnage-in?sign=${this.calculateSign(body)}`, body)
+            if (result.code == 200) {
+                $.log(`账号[${this.index}] 参与上上签成功🎉`)
+            } else {
+                $.log(`❌账号[${this.index}] 参与上上签失败[${result.msg}]`);
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async StationList() {
+        let body = { "student": false, "source": "" }
+        try {
+            let result = await this.taskRequest_task("post", `https://app.dewu.com/api/v1/h5/delicate-sell-interfaces/dsell/query/ongoing-list?sign=${this.calculateSign(body)}`, body)
+            if (result.code == 200) {
+                for (let i of result.data.records) {
+                    if (i.userPartakeStatus == 10) {
+                        this.stationList.push(i)
+                    }
+                }
+            } else {
+                $.log(`❌账号[${this.index}] 获取上上签列表失败[${result.msg}]🎉`);
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async BuZhouInfo() {
+        let body = { "benefitId": 1, "additionPresent": 0, "source": "gamecentertask" }
+        try {
+            let result = await this.taskRequest_task("post", `https://app.dewu.com/api/v1/h5/mount-buzhou-interfaces/gk/index?sign=${this.calculateSign(body)}`, body)
+            if (result.code == 200) {
+                //console.log(result.data);
+                $.log(`账号[${this.index}] 盲盒赛季[${result.data.seasonName}] 当前抽奖机会[${result.data.chanceCount}] 🎉`)
+                if ("prizeLocations" in result.data) {
+                    $.log(`已开盲盒位置[${result.data.prizeLocations}]`)
+                    this.prizeLocations = result.data.prizeLocations
+                } else {
+                    this.prizeLocations = []
+                }
+                this.chanceCount = result.data.chanceCount
+                //console.log(result.data.hasDraw);
+                if (this.chanceCount != 0) {
+                    this.waitPrizeLocations = this.findMissingNumbers(this.prizeLocations)
+                    //加一个条件 如果waitPriz...... 小于 chence 则 刷新
+                    if (this.waitPrizeLocations.length == 0 && this.chanceCount > 0) {
+                        await $.wait(2500)
+                        await this.BuZhouRefresh(result.data.seasonId)
+                    }
+                    this.waitPrizeLocations = this.findMissingNumbers(this.prizeLocations)
+                    //如果长度大于等于chence  则不刷新
+
+                    let max = this.waitPrizeLocations.length >= this.chanceCount ? this.chanceCount : this.waitPrizeLocations.length
+                    for (let i = 0; i < max; i++) {
+                        let prizeLocation = this.waitPrizeLocations[i]
+                        $.log("开始第" + (i + 1) + "次抽奖")
+                        await $.wait(2500)
+                        await this.BuZhouLottery(result.data.seasonId, prizeLocation)
+                    }
+                    await $.wait(2500)
+                    await this.BuZhouRefresh(result.data.seasonId)
+                }
+
+
+
+
+            } else {
+                $.log(`❌账号[${this.index}] 盲盒获取失败[${result.msg}]`);
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async BuZhouLottery(seasonId, prizeLocation) {
+        let body = { "benefitId": 1, "seasonId": seasonId, "prizeLocation": prizeLocation, "source": "gamecentertask" }
+        try {
+            let result = await this.taskRequest_task("post", `https://app.dewu.com/api/v1/h5/mount-buzhou-interfaces/gk/lottery?sign=${this.calculateSign(body)}`, body)
+            if (result.code == 200) {
+                $.log(`账号[${this.index}] 盲盒抽取[${result.data.gkLotteryVo.gkName}]碎片`);
+            } else {
+                $.log(`❌账号[${this.index}] 盲盒抽取失败[${result.msg}]`);
+                //console.log(seasonId, prizeLocation);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async BuZhouRefresh(seasonId) {
+        let body = { "seasonId": seasonId }
+        try {
+            let result = await this.taskRequest_task("post", `https://app.dewu.com/api/v1/h5/mount-buzhou-interfaces/gk/refresh?sign=${this.calculateSign(body)}`, body)
+            if (result.code == 200) {
+                $.log(`账号[${this.index}] 刷新盲盒成功`);
+                this.BuZhouRefreshStatus = true;
+                this.prizeLocations = []
+            } else {
+                $.log(`❌账号[${this.index}] 刷新盲盒失败[${result.msg}]`);
+                //console.log(result);
+                this.BuZhouRefreshStatus = false;
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async BuZhouTaskList() {
+        let body = { "source": "gamecentertask" }
+        try {
+            let result = await this.taskRequest_task("get", `https://app.dewu.com/api/v1/h5/mount-buzhou-interfaces/gk/task-list?source=gamecentertask&sign=${this.calculateSign(body)}`)
+            if (result.code == 200) {
+                for (let i of result.data.taskVoList) {
+                    let taskStatus = false
+                    if (i.isComplete == false) {
+                        if (i.taskType == 1) {
+                            if (i.classify == 2) {
+                                //浏览  
+
+                                taskStatus = await this.DoTask(i)
+                            }
+                        }
+                        if (i.taskType == 50) {
+                            await $.wait(2500)
+
+                            taskStatus = await this.DoTask(i)
+                            //收藏
+                        }
+                    } else if (i.isComplete == true && i.isReceiveReward == false) {
+                        await $.wait(2500)
+                        await this.TaskReceiveBuZhou(i)
+                    }
+                    if (taskStatus == true) {
+                        await $.wait(2500)
+                        await this.TaskReceiveBuZhou(i)
+                    }
+                }
+            } else {
+                $.log(`❌账号[${this.index}] 盲盒任务获取失败[${result.msg}]`);
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async TaskReceivePoint(body) {
+        try {
+            let RequestBody = { taskId: body.taskId, taskType: body.taskType }
+
+            let result = await this.taskRequest("post", `https://app.dewu.com/hacking-game-center/v1/sign/task_receive?sign=${this.calculateSign(RequestBody)}`, RequestBody)
+            //console.log(JSON.stringify(result));
+            if (result.code == 200) {
+                $.log(`账号[${this.index}]  领取任务奖励[${result.msg}] --- [${result.data.amount}]金币🎉`)
+            } else {
+                //console.log(body.taskId);
+                $.log(`❌账号[${this.index}]  领取任务奖励失败[${result.msg}]`);
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async TaskReceiveBuZhou(body) {
+        try {
+            let RequestBody = { taskId: body.taskId, classify: body.classify }
+            let result = await this.taskRequest("post", `https://app.dewu.com/api/v1/h5/mount-buzhou-interfaces/gk/task-receive?sign=${this.calculateSign(RequestBody)}`, RequestBody)
+            //console.log(JSON.stringify(result));
+            if (result.code == 200) {
+                $.log(`账号[${this.index}]  领取任务奖励[${result.msg}] --- [${result.data.count}]次数🎉`)
+            } else {
+                //console.log(body.taskId);
+                $.log(`❌账号[${this.index}]  领取任务奖励失败[${result.msg}]`);
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async FishFeed() {
+        let body = { "feedTimes": 1, "fishId": this.fishId, "fishType": this.fishType }
+        try {
+            let result = await this.taskRequest("post", `https://app.dewu.com/hacking-fish/v1/fish/feed?sign=63a26f09f6d985b73299f92506f6e986`, body)
+            if (result.code == 200) {
+                $.log(`账号[${this.index}] 喂食🐟成功🎉`)
+                this.fishFeedStatus = true
+            } else {
+                this.fishFeedStatus = false
+                $.log(`❌账号[${this.index}] 喂食🐟失败[${result.msg}]`);
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async Dowater() {
+        if (this.droplet > 0) {
+            $.log(`账号[${this.index}]  可浇水${parseInt(this.droplet / 100)}次,开始浇水`);
+            if (this.treeMode == 0) {
+                for (let i = 0; i < parseInt(this.droplet / 100); i++) {
+                    if (this.doWaterStatus) {
+                        await this.DoWaterApi()
+                        //随机延迟random
+                        await $.wait(this.randomNumber(1000, 2000))
+                    }
+                }
+            } else if (this.treeMode == 1) {
+                $.log(`账号[${this.index}] 组队浇水 =>`)
+                for (let i = 0; i < parseInt(this.droplet / 100); i++) {
+                    if (this.doWaterStatus) {
+                        await this.DoWaterTeamApi(this.treeId)
+                        //随机延迟random
+                        await $.wait(this.randomNumber(1000, 2000))
+                    }
+                }
+                await this.TeamInfo()
+            }
+
+        }
+    }
+    async DoWaterApi() {
+        let body = {}
+        try {
+            let result = await this.taskRequest("post", `https://app.dewu.com/hacking-tree/v1/tree/watering?sign=fe26befc49444d362c8f17463630bdba`, body)
+            if (result.code == 200) {
+                $.log(`账号[${this.index}] 浇水成功🎉`)
+                this.doWaterStatus = true
+            } else {
+                this.doWaterStatus = false
+                $.log(`❌账号[${this.index}] 浇水失败[${result.msg}]`);
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async DoWaterTeamApi(teamTreeId) {
+        let body = { "teamTreeId": teamTreeId }
+        try {
+            let result = await this.taskRequest("post", `https://app.dewu.com/hacking-tree/v1/team/tree/watering?sign=b5ee2c7e8d1aaf214886c438c4f25cd9`, body)
+            if (result.code == 200) {
+                $.log(`账号[${this.index}] 浇水成功🎉`)
+                if (result.data.coupons !== null) {
+                    $.log(`账号[${this.index}] 浇水成功获得${result.data.coupons[0].limitDesc}🎉`)
+
+                }
+                this.doWaterStatus = true
+            } else {
+                this.doWaterStatus = false
+                $.log(`❌账号[${this.index}] 浇水失败[${result.msg}]`);
+
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async TreeInfo() {
+        try {
+            let result = await this.taskRequest("get", `https://app.dewu.com/hacking-tree/v1/user/target/info`)
             //console.log(result);
             if (result.code == 200) {
-                //DoubleLog(`账号[${this.index}]  获取助力码[${result.msg}][${result.data.keyword}][${result.data.keywordDesc}]`);
-                shareCodeArr.push(result.data.keyword)
+                $.log(`账号[${this.index}] [${result.data.name}] Lv[${result.data.level}]🎉`)
+
             } else {
-                DoubleLog(`账号[${this.index}]  获取助力码失败:原因未知`);
-                console.log(result);
+                $.log(`❌账号[${this.index}]  获取🌳信息失败[${result.msg}]`);
+                //console.log(result);
             }
-        } catch (error) {
-            console.log(error);
+        } catch (e) {
+            console.log(e);
         }
     }
-    async get_tree() { // 农场水滴剩余 和信息
+    async TaskListTree() {
         try {
-            let options = {
-                method: 'GET',
-                url: 'https://app.dewu.com/hacking-tree/v1/tree/get_tree_info?sign=fe26befc49444d362c8f17463630bdba',
-                headers: this.headersGet,
-            };
-            //console.log(options);
-            let result = await httpRequest(options);
+            let result = await this.taskRequest("get", `https://app.dewu.com/hacking-tree/v1/task/list`)
             //console.log(result);
             if (result.code == 200) {
-                this.ckStatus = true
-                //$.msg(`账号[${this.index}]  [${result.data.treeId}] 成熟进度[${result.data.userWateringDroplet}/${result.data.currentLevelNeedWateringDroplet}g]`)
-                DoubleLog(`账号[${this.index}]  [${result.data.treeId}] 成熟进度 --- [${result.data.userWateringDroplet}/${result.data.currentLevelNeedWateringDroplet}g]`);
+                $.log(`账号[${this.index}] 获取任务列表成功 采集/领取 集到[${result.data.taskList.length}]条任务🎉`)
+                for (let i of result.data.taskList) {
+                    this.taskListTree.push(i)
+                }
+                for (let i of this.taskListTree) {
+                    let taskStatus = false
+                    if (i.isComplete == false) {
+                        await $.wait(2500)
+                        if (i.taskType == 1) {
+                            if (i.classify == 2) {
+                                //浏览  
+
+                                taskStatus = await this.DoTask(i)
+                            }
+                            if (i.classify == 1) {
+                                //完成固定次数浇灌 默认5次
+                            }
+                        }
+                        if (i.taskType == 10) {
+                            //固定时间段领取 40g
+                        }
+                        if (i.taskType == 123) {
+                            taskStatus = await this.DoTask(i)
+                            //从桌面组件访问
+                        }
+                        if (i.taskType == 50) {
+                            taskStatus = await this.DoTask(i)
+                            //收藏
+                        }
+                        if (i.taskType == 201) {
+                            //逛95分
+                        }
+                        if (i.taskType == 4) {
+                            //收集一次水滴生产
+                        }
+                    } else if (i.isComplete == true && i.isReceiveReward == false) {
+                        await $.wait(2500)
+                        await this.TaskReceiveTree(i)
+                    }
+                    if (taskStatus) {
+                        await $.wait(2500)
+                        await this.TaskReceiveTree(i)
+                    }
+                }
             } else {
-                DoubleLog(`账号[${this.index}]  农场信息查询失败:原因未知`);
-                console.log(result);
+                $.log(`❌账号[${this.index}]  获取任务列表成功🎉失败[${result.msg}]`);
+                //console.log(result);
             }
-        } catch (error) {
-            console.log(error);
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async SignListTree() {
+        try {
+            let result = await this.taskRequest("get", `https://app.dewu.com/hacking-tree/v1/sign/list`)
+            //console.log(JSON.stringify(result));
+            if (result.code == 200) {
+                $.log(`账号[${this.index}]  今日${result.data.status == 1 ? "未签到" : "已签到"}🎉`)
+                if (result.data.status == 1) {
+                    let SignInResult = await this.taskRequest("post", `https://app.dewu.com/hacking-tree/v1/sign/sign_in`, {})
+                    if (SignInResult.code == 200) {
+                        $.log(`账号[${this.index}]  签到领取水滴[${SignInResult.msg}] --- [${SignInResult.data.Num}]🎉`)
+                    } else {
+                        $.log(`账号[${this.index}]  签到领取水滴[${SignInResult.msg}]`)
+                    }
+                }
+            } else {
+                $.log(`❌账号[${this.index}]  获取签到列表失败[${result.msg}]`);
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async SignListFish() {
+        try {
+            let result = await this.taskRequest_task("get", `https://app.dewu.com/hacking-fish/v1/daily_sign/list`)
+            //console.log(JSON.stringify(result));
+            if (result.code == 200) {
+                $.log(`账号[${this.index}]  今日${result.data.status == 1 ? "未签到" : "已签到"}🎉`)
+                if (result.data.status == 1) {
+                    let SignInResult = await this.taskRequest("post", `https://app.dewu.com/hacking-fish/v1/daily_sign/receive`, {})
+                    if (SignInResult.code == 200) {
+                        $.log(`账号[${this.index}]  签到领取鱼食[${SignInResult.msg}] --- [${SignInResult.data.Num}]🎉`)
+                    } else {
+                        $.log(`账号[${this.index}]  签到领取鱼食[${SignInResult.msg}]`)
+                    }
+                }
+            } else {
+                $.log(`❌账号[${this.index}]  获取签到列表失败[${result.msg}]`);
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async PointInfo() {
+        try {
+            let result = await this.taskRequest_task("get", `https://app.dewu.com/hacking-game-center/v1/gold/balance`)
+            //console.log(JSON.stringify(result));
+            if (result.code == 200) {
+                $.log(`账号[${this.index}] 潮金币[${result.data.coinDetailList[0].value}]`);
+            } else {
+                $.log(`❌账号[${this.index}] 获取潮金币信息失败[${result.msg}]`);
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async PointTaskList() {
+        try {
+            let result = await this.taskRequest_task("get", `https://app.dewu.com/hacking-game-center/v1/sign/task_list`)
+            //console.log(JSON.stringify(result));
+            if (result.code == 200) {
+                for (let i of result.data.list) {
+                    let taskStatus = false
+                    if (i.isComplete == false) {
+                        if (i.taskType == 1) {
+                            i.classify = 2
+                            taskStatus = await this.DoTask(i)
+                        }
+                        if (i.taskType == 50) {
+                            await $.wait(2500)
+                            taskStatus = await this.DoTask(i)
+                            //收藏
+                        }
+                    } else if (i.isComplete == true && i.isReceiveReward == false) {
+                        await $.wait(2500)
+                        await this.TaskReceivePoint(i)
+                    }
+                    if (taskStatus == true) {
+                        await $.wait(2500)
+                        await this.TaskReceivePoint(i)
+                    }
+                }
+            } else {
+                $.log(`❌账号[${this.index}] 获取潮金币任务列表失败[${result.msg}]`);
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async PonitSignIn() {
+        try {
+            let result = await this.taskRequest("post", `https://app.dewu.com/hacking-game-center/v1/sign/sign`, {})
+            //console.log(JSON.stringify(result));
+            if (result.code == 200) {
+                $.log(`账号[${this.index}]  外部活动潮币签到成功 获得[${result.data.coins}g💧]🎉`)
+            } else {
+                $.log(`❌账号[${this.index}]  外部活动潮币签到失败[${result.msg}]`);
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async Droplet_ExtraInfo() {
+        try {
+            let result = await this.taskRequest("get", `https://app.dewu.com/hacking-tree/v1/droplet-extra/info`)
+            //console.log(JSON.stringify(result));
+            if (result.code == 200) {
+                $.log(`账号[${this.index}]  气泡水滴 可领取 ---  💧🎉`)
+                let receiveResult = await this.taskRequest("post", `https://app.dewu.com/hacking-tree/v1/droplet-extra/receive`, {})
+                //console.log(JSON.stringify(result));
+                if (receiveResult.code == 200) {
+                    $.log(`账号[${this.index}]  领取气泡水滴[${receiveResult.msg}] --- [${receiveResult.data.totalDroplet}g]💧🎉`)
+                } else {
+                    $.log(`❌账号[${this.index}]  领取气泡失败[${receiveResult.msg}]`);
+                    //console.log(result);
+                }
+            } else {
+                $.log(`❌账号[${this.index}]  气泡水滴获取失败[${result.msg}]`);
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async Droplet_Get_Generate_Droplet() {
+        try {
+            let result = await this.taskRequest("post", `https://app.dewu.com/hacking-tree/v1/droplet/get_generate_droplet`, {})
+            //console.log(JSON.stringify(result));
+            if (result.code == 200) {
+                $.log(`账号[${this.index}]  领取小木桶积攒水滴[${result.msg}] --- [${result.data.droplet}g]💧🎉`)
+            } else {
+                $.log(`❌账号[${this.index}]  领取小木桶积攒水滴失败[${result.msg}]`);
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async TaskReceiveFish(body) {
+        try {
+            let result = await this.taskRequest("post", `https://app.dewu.com/hacking-fish/v1/task/receive?sign=ee632e4b8e24d2526737bca0b7c0c678`, { taskId: body.taskId, classify: body.classify })
+            //console.log(JSON.stringify(result));
+            if (result.code == 200) {
+                $.log(`账号[${this.index}]  领取任务奖励[${result.msg}] --- [${result.data.num}g]💧🎉`)
+
+            } else {
+                $.log(`❌账号[${this.index}]  领取任务奖励失败[${result.msg}]`);
+                //console.log(body.taskId);
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async TaskReceiveTree(body) {
+        try {
+            let result = await this.taskRequest("post", `https://app.dewu.com/hacking-tree/v1/task/receive?sign=15c051cc7af50c30318c05b539e434e7`, { taskId: body.taskId, classify: body.classify })
+            //console.log(JSON.stringify(result));
+            if (result.code == 200) {
+                $.log(`账号[${this.index}]  领取任务奖励[${result.msg}] --- [${result.data.num}g]💧🎉`)
+            } else {
+                //console.log(body.taskId);
+                $.log(`❌账号[${this.index}]  领取任务奖励失败[${result.msg}]`);
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async Get_Tree_Info() {
+        try {
+            let result = await this.taskRequest("get", `https://app.dewu.com/hacking-tree/v1/tree/get_tree_info`)
+            //console.log(JSON.stringify(result));
+            if (result.code == 200) {
+                $.log(`账号[${this.index}]  [${result.data.treeId}] 成熟进度 --- [${result.data.userWateringDroplet}/${result.data.currentLevelNeedWateringDroplet}g]💧🎉`)
+
+            } else {
+                $.log(`❌账号[${this.index}]  获取🌳成长信息失败[${result.msg}]`);
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async TaskListFish() {
+        try {
+            let result = await this.taskRequest("get", `https://app.dewu.com/hacking-fish/v1/task/list`)
+            //console.log(JSON.stringify(result));
+            if (result.code == 200) {
+                $.log(`账号[${this.index}] 获取任务列表成功 采集/领取 [${result.data.taskList.length}]条任务🎉`)
+                for (let i of result.data.taskList) {
+                    this.taskListFish.push(i)
+                }
+                for (let i of this.taskListFish) {
+                    let taskStatus = false
+                    if (i.isComplete == false) {
+                        await $.wait(2500)
+                        if (i.taskType == 1) {
+                            if (i.classify == 2) {
+                                //浏览  
+
+                                taskStatus = await this.DoTask(i)
+                            }
+                            if (i.classify == 1) {
+                                //完成固定次数浇灌 默认5次
+                            }
+                        }
+                        if (i.taskType == 100001) {
+                            //喂养5次
+                        }
+                        if (i.taskType == 124) {
+                            taskStatus = await this.DoTask(i)
+                            //从桌面组件访问
+                        }
+                        if (i.taskType == 50) {
+                            taskStatus = await this.DoTask(i)
+                            //收藏
+                        }
+                        if (i.taskType == 201) {
+                            //逛95分
+                        }
+                        if (i.taskType == 100002) {
+                            //30g鱼食 每日9点/13点/17点/21点各领一次
+                        }
+                    } else if (i.isComplete == true && i.isReceiveReward == false) {
+                        await $.wait(3000)
+                        await this.TaskReceiveFish(i)
+                    }
+                    if (taskStatus) {
+                        await $.wait(3000)
+                        await this.TaskReceiveFish(i)
+                    }
+                }
+            } else {
+                $.log(`❌账号[${this.index}]  获取任务🐟失败[${result.msg}]`);
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async UserInit() {
+        let result = {
+            code: 0,
+            msg: "获取🌳信息失败",
+        }
+        try {
+            let authHelpCode = "";
+            if (this.index == 1) {
+                for (let j of authShareCodeList) {
+                    authHelpCode = j
+                    result = await this.taskRequest("post", `https://app.dewu.com/hacking-tree/v1/user/init?sign=d25c30ebdf1adeb29ca10ccb825bbf66`, { "keyword": "", "source": "wotab04", "koc": 0, "ffOfflineFlag": "", "keywordType": 0 })
+                    if (result.code == 200) {
+                        if ("inviteRes" in result.data) {
+                            if (result.data.inviteRes.indexOf("成功") != -1) {
+                                $.log(`首账号助力作者成功`)
+                                break
+                            }
+                        }
+                    }
+                }
+                let helpCodeResult = await this.taskRequest("post", "https://app.dewu.com/hacking-tree/v1/keyword/gen?sign=fe26befc49444d362c8f17463630bdba", {})
+                if (helpCodeResult.code == 200) {
+                    let kw = helpCodeResult.data.keyword
+                    helpCode = kw.split("œ")[1]
+                    $.log(`首账号助力码[${helpCode}]`)
+                }
+            } else {
+                result = await this.taskRequest("post", `https://app.dewu.com/hacking-tree/v1/user/init?sign=d25c30ebdf1adeb29ca10ccb825bbf66`, { "keyword": "", "source": "wotab04", "koc": 0, "ffOfflineFlag": "", "keywordType": 0 })
+            }
+            if (result.code == 200) {
+                $.log(`账号[${this.index}]  [${result.msg}]  剩余水滴[${result.data.droplet}g] 助力[${this.index == 1 ? "作者:" + authHelpCode : helpCode}][${"inviteRes" in result.data ? result.data.inviteRes : "未成功"}]🎉`)
+                this.treeId = result.data.treeId
+                this.droplet = result.data.droplet
+                this.treeMode = result.data.mode
+
+
+            } else {
+                $.log(`❌账号[${this.index}]  获取🌳信息失败[${result.msg}]`);
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
         }
     }
 
+    async TreeInviteReward() {
+        try {
+            let result = await this.taskRequest("get", `https://app.dewu.com/hacking-tree/v1/invite/list`, `sign=fe26befc49444d362c8f17463630bdba`)
+
+            if (result.code == 200) {
+                if (result.data?.list) {
+                    for (let i of result.data.list) {
+                        if (i.status == 0) {
+                            let body = { "inviteeUserId": i.inviteeUserId }
+                            let rewardResult = await this.taskRequest("post", `https://app.dewu.com/hacking-tree/v1/invite/reward`, body)
+                            if (rewardResult.code == 200) {
+                                $.log(`账号[${this.index}] 领取邀请奖励成功 获取[${rewardResult.data.droplet}]g`);
+                            }
+
+                        }
+                    }
+                }
+
+
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async TeamInfo() {
+        try {
+            let result = await this.taskRequest("get", `https://app.dewu.com/hacking-tree/v1/team/info`)
+            //console.log(result);
+            if (result.code == 200) {
+                for (let i of result.data.member) {
+                    if (i.isCaptain == true) {
+                        $.log(`账号[${this.index}] 组队队长[${i.name}] 今日是否上线[${i.status == 1 ? '是' : '否'}]`)
+                    } else {
+                        $.log(`账号[${this.index}] 组员[${i.name}] 今日是否上线[${i.status == 1 ? '是' : '否'}]`)
+                    }
+                }
+            } else {
+                $.log(`❌账号[${this.index}]  获取队伍🌳🎉失败[${result.msg}]`);
+                //console.log(result);
+            }
+
+
+
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    async UserFinshInfo() {
+        try {
+            let result = await this.taskRequest_task("get", `https://app.dewu.com/hacking-fish/v1/user/home?userSelectFishId=0&sign=5d75086e825f0fcea4b2cbdf5e6d940f`)
+            //console.log(result);
+            let fishName = ""
+            let lv = ""
+            let progress = ""
+            if (result.code == 200) {
+                this.fishId = result.data.selectFishId
+                for (let j of result.data.fishList) {
+                    if (this.fishId == j.fishId) {
+                        this.fishType = j.type
+                        fishName = j.typeData.name
+                        lv = j.level
+                        progress = j.progress
+                        break;
+                    }
+                }
+                $.log(`账号[${this.index}]  [${fishName}]等级[${lv}] [${progress}/1000000]  剩余※鱼食🐟[${result.data.balance}g]🎉`)
+                if (result.data.balance > 0) {
+                    $.log(`账号[${this.index}]  喂食🐟${parseInt(result.data.balance / 10)}次,开始喂食`);
+                    for (let i = 0; i < parseInt(result.data.balance / 10); i++) {
+                        if (this.fishFeedStatus) {
+                            await this.FishFeed()
+                            //随机延迟random
+                            await $.wait(this.randomNumber(1000, 2000))
+                        }
+                    }
+                }
+
+            } else {
+                $.log(`❌账号[${this.index}]  获取用户信息成功🎉失败[${result.msg}]`);
+                //console.log(result);
+            }
+        } catch (e) {
+            console.log(e);
+        }
+    }
+    findMissingNumbers(arr) {
+        const nums = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+        const missing = [];
+
+        for (const num of nums) {
+            if (!arr.includes(num)) {
+                missing.push(num);
+            }
+        }
+
+        return missing;
+    }
+    //randominit
+    randomNumber(min, max) {
+        return Math.floor(Math.random() * (max - min)) + min;
+    }
+    async taskRequest(method, url, body = {}) {
+        //
+
+        let headers = {
+            "Host": "app.dewu.com",
+
+            "SK": this.sk,
+
+            "x-auth-token": "Bearer " + this.ck,
+
+            "duToken": "" + this.duToken,
+
+            "cookieToken": "" + this.duToken,
+            "traceparent": this.generateIds(),
+            "User-Agent": this.ua,
+
+            "sks": "1,hdw3",
+
+
+            "Cookie": "duToken=" + this.duToken
+        }
+        const reqeuestOptions = {
+            url: url,
+            method: method,
+            headers: headers
+
+        }
+        //console.log(body);
+        let { enData, n } = this.createEncryptedBody(JSON.stringify(body))
+        reqeuestOptions.headers["a"] = n
+        //console.log(enData);
+        method == "get" ? (reqeuestOptions.url.split("?")[1] != undefined ? reqeuestOptions.url += "&data=" + encodeURIComponent(enData.data) : reqeuestOptions.url += "?data=" + encodeURIComponent(enData.data)) : Object.assign(reqeuestOptions, { body: JSON.stringify({ data: enData.data }) })
+        //console.log(reqeuestOptions)
+        try {
+            let { body: result } = await $.httpRequest(reqeuestOptions)
+            if (!$.isJson(result)) {
+                result = JSON.parse(this.decryptResponseBody(result, n))
+            }
+            //console.log(result);
+            return result
+
+        } catch (error) {
+            //console.log(error);
+            // $.log(`接口请求失败 `)
+            return { code: 0, msg: "接口请求失败" }
+        }
+
+    }
+    generateIds() {
+        var Uo = Array(32);
+        var oe = "0000000000000000";
+
+        function Ho(e) {
+            for (var t = 0; t < 2 * e; t++)
+                Uo[t] = Math.floor(16 * Math.random()) + 48,
+                    Uo[t] >= 58 && (Uo[t] += 39);
+            return String.fromCharCode.apply(null, Uo.slice(0, 2 * e));
+        }
+
+        var Mo = "00000000000000000000000000000000"; // Assuming Mo is defined somewhere else in your code
+
+        var generateSpanId = function () {
+            return function (e) {
+                var t = e(8);
+                if (t === oe)
+                    return Mo;
+                return t;
+            }(Ho);
+        };
+
+        var generateTraceId = function () {
+            return function (e) {
+                var t = Math.floor(Date.now() / 1e3).toString(16),
+                    n = e(8),
+                    r = e(3);
+                return "f5" + r + t + n;
+            }(Ho);
+        };
+
+        return "00-" + generateTraceId() + "-" + generateSpanId() + "-01"
+    };
+
+    async taskRequest_task(method, url, body = "") {
+
+
+        let headers = {
+            "Host": "app.dewu.com",
+            "Connection": "keep-alive",
+            //"Content-Length": "62",
+            //"ua": "duapp/5.37.0(android;10)",
+            //"Origin": "https://cdn-m.dewu.com",
+            //"appid": "h5",
+            "SK": this.sk,
+            /*"shumeiId": "20240229101108a9d7deaedd9e5e305209da327c58c8fc21a0fe159c45b78d",*/
+            /*"deviceTrait": "MI+8+Lite",*/
+            "x-auth-token": "Bearer " + this.ck,
+            /*"Sec-Fetch-Dest": "empty",
+            "channel": "xiaomi",
+            "duToken": "d41d8cd9|1630362958|1711360875|4bf085e789d085b0",
+            "appVersion": "5.37.0",
+            "emu": "0",*/
+            //"cookieToken": "d41d8cd9|1630362958|1711360875|4bf085e789d085b0",
+            "traceparent": this.generateIds(),
+            /*"dudeliveryid": "79F073E7555D2BD9490AF2270549ADBABDFE24914A4EEF24D4D5C25559243BDD",*/
+            "User-Agent": this.ua,
+            //"duproductid": "0BC86B71CB9BA08726EDD70256925177BDFE24914A4EEF24D4D5C25559243BDD",
+            "Content-Type": "application/json",
+            /*"isRoot": "0",
+            "imei": "",
+            "duid": "0BC86B71CB9BA08726EDD70256925177BDFE24914A4EEF24D4D5C25559243BDD",
+            "platform": "h5",
+            "isProxy": "0",
+            */
+            /*"X-Requested-With": "com.shizhuang.duapp",
+            "Sec-Fetch-Site": "same-site",
+            "Sec-Fetch-Mode": "cors",
+            "Referer": "https://cdn-m.dewu.com/h5-growth/game-task?gameTaskFlag=true&taskId=Nr52k&taskType=50&countdownIcon=%7B%22countdownIcon%22%3A%22https%3A%2F%2Fcdn.poizon.com%2Fnode-common%2F28c7b3d4060e086551dcc84eca7bfbeb.png%22%2C%22hideCountdownIcon%22%3A%22https%3A%2F%2Fcdn.poizon.com%2Fnode-common%2Fa8b472c7622a53454d82745345cefa71.png%22%2C%22coordinate%22%3A%2212%2C600%22%7D&scrollbarColor=%2301C1C2&fontColor=%23FFFFFF&btd=83500&goodsCollect=goodsDetail&popId=0",
+            "Accept-Encoding": "gzip, deflate",
+            "Accept-Language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",*/
+            "Cookie": `duToken=${this.duToken};`
+        }
+        const reqeuestOptions = {
+            url: url,
+            method: method,
+            headers: headers
+
+        }
+        body == "" ? "" : Object.assign(reqeuestOptions, { body: JSON.stringify(body) })
+        //console.log(reqeuestOptions)
+        try {
+            let { body: result } = await $.httpRequest(reqeuestOptions)
+            return result
+        } catch (error) {
+            // $.log(`接口请求失败 `)
+            return { code: 0, msg: "接口请求失败" }
+        }
+        //
+
+    }
+    createEncryptedBody(data) {
+        const key2 = "MFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBANMGZPlLobHYWoZyMvHD0a6emIjEmtf5Z6Q++VIBRulxsUfYvcczjB0fMVvAnd1douKmOX4G690q9NZ6Q7z/TV8CAwEAAQ==";
+        const publicKeyPem = '-----BEGIN PUBLIC KEY-----\n' +
+            key2 +
+            '-----END PUBLIC KEY-----';
+
+        global["window"] = {}
+        const jsencrypt = require("jsencrypt")
+        const crypt = new jsencrypt()
+        crypt.setKey(publicKeyPem)
+        const n = this.randomStr(48, 16);
+        const encrypted = crypt.encrypt(n)
+        const enBody = CryptoJS.enc.Utf8.parse(data);
+        const enResult = CryptoJS.AES.encrypt(enBody, CryptoJS.enc.Utf8.parse(n.substr(10, 16)), {
+            iv: CryptoJS.enc.Utf8.parse(n.substr(20, 16)),
+            mode: CryptoJS.mode.CBC,
+            padding: CryptoJS.pad.Pkcs7,
+        });
+        //console.log(encrypted);
+        //console.log(hexToBase64(encrypted));
+        const newBody = {
+            data: encrypted + "" + enResult.ciphertext.toString().toUpperCase(),
+        };
+        newBody.sign = this.calculateSign(newBody);
+        return { enData: newBody, n };
+        function hexToBase64(hexString) {
+            const buffer = Buffer.from(hexString, 'hex');
+            const base64String = buffer.toString('base64');
+            return base64String;
+        }
+    }
+    randomStr(length, charset) { var tmp1, tmp2, data = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".split(""), result = []; if (((charset = charset || data["length"]), length)) for (tmp1 = 0; tmp1 < length; tmp1++)result[tmp1] = data[0 | (Math.random() * charset)]; else for (result[8] = result[13] = result[18] = result[23] = "-", result[14] = "4", tmp1 = 0; tmp1 < 36; tmp1++)result[tmp1] || ((tmp2 = 0 | (16 * Math["random"]())), (result[tmp1] = data[19 === tmp1 ? (3 & tmp2) | 8 : tmp2])); return result["join"]("") }
+    decryptResponseBody(result, n) {
+        try {
+            const de1 = CryptoJS.enc.Hex.parse(result),
+                de2 = CryptoJS.enc.Base64.stringify(de1);
+            const decrypted = CryptoJS.AES.decrypt(de2, CryptoJS.enc.Utf8.parse(n.substr(10, 16)), {
+                iv: CryptoJS.enc.Utf8.parse(n.substr(20, 16)),
+                mode: CryptoJS.mode.CBC,
+                padding: CryptoJS.pad.Pkcs7,
+            }).toString(CryptoJS.enc.Utf8);
+            return decrypted;
+        } catch (error) {
+            n = "987654321012345678901234567890123456789012345678"
+            const de1 = CryptoJS.enc.Hex.parse(result),
+                de2 = CryptoJS.enc.Base64.stringify(de1);
+            const decrypted = CryptoJS.AES.decrypt(de2, CryptoJS.enc.Utf8.parse(n.substr(10, 16)), {
+                iv: CryptoJS.enc.Utf8.parse(n.substr(20, 16)),
+                mode: CryptoJS.mode.CBC,
+                padding: CryptoJS.pad.Pkcs7,
+            }).toString(CryptoJS.enc.Utf8);
+            return decrypted;
+        }
+
+    }
+    //修复自 修改处理后 空值删除得情况 改为不删除
+    calculateSign(requestBody) { const sortedKeys = Object.keys(requestBody).sort(); let signContent = sortedKeys.reduce((acc, key) => { const value = requestBody[key]; if (value === null) { return acc } if (typeof value === 'object' && !Array.isArray(value)) { return acc.concat(key).concat(JSON.stringify(value)) } if (Array.isArray(value)) { if (value.length > 0) { let typeOfFirstItem = typeof value[0]; if (typeOfFirstItem === 'object') { let arrayStr = ''; value.forEach((item, index) => { arrayStr += JSON.stringify(item) + (index !== value.length - 1 ? ',' : '') }); return acc.concat(key).concat(arrayStr) } } return acc.concat(key).concat(value.toString()) } return acc.concat(key).concat(value.toString()) }, ''); const secretKey = "048a9c4943398714b356a696503d2d36"; const hashedContent = CryptoJS.MD5(signContent.concat(secretKey)).toString(); return hashedContent }
+
+    getRandomUA() {
+        // 生成 iOS 版本号
+        const iOSVersion = (Math.floor(Math.random() * (161 - 120) + 120) / 10).toFixed(1);
+
+        // 生成 AppleWebKit 版本号
+        const AppleWebKitVersion = `${Math.floor(Math.random() * (605 - 500) + 500)}.${Math.floor(Math.random() * 10)}.${Math.floor(Math.random() * 20)}`;
+
+        // 生成 Mobile 版本号
+        const mobileVersion = `${Math.floor(Math.random() * 10)}${String.fromCharCode(65 + Math.floor(Math.random() * 26))}${Math.floor(Math.random() * 10)}`;
+
+        // 生成 User-Agent 字符串
+        const userAgent = `Mozilla/5.0 (iPhone; CPU iPhone OS ${iOSVersion} like Mac OS X) AppleWebKit/${AppleWebKitVersion} (KHTML, like Gecko) Mobile/${mobileVersion}/duapp/5.38.6`;
+
+        return userAgent;
+    }
 
 }
+
+
+
 
 !(async () => {
     if (!(await checkEnv())) return;
     if (userList.length > 0) {
-        await start();
-    }
-    //console.log(`助力码数组${shareCodeArr}`);
+        await main()
 
-    await SendMsg(msg);
+    }
+    await $.sendMsg($.logs.join("\n"))
 })()
     .catch((e) => console.log(e))
     .finally(() => $.done());
 
-
-
-//  Variable checking and processing
+//********************************************************
+/**
+ * @returns
+ */
 async function checkEnv() {
+    let userCookie = ($.isNode() ? process.env[ckName] : $.getdata(ckName)) || "";
     if (userCookie) {
-        // console.log(userCookie);
         let e = envSplitor[0];
-        for (let o of envSplitor)
+        for (let o of envSplitor) {
             if (userCookie.indexOf(o) > -1) {
                 e = o;
                 break;
             }
-        for (let n of userCookie.split(e)) n && userList.push(new UserInfo(n));
-        userCount = userList.length;
+        }
+
+        for (let n of userCookie.split(e)) {
+
+            n && userList.push(new Task(n));
+        }
     } else {
-        console.log("未找到CK");
+        console.log(`未找到CK变量名【${ckName}】`);
         return;
     }
-    return console.log(`共找到${userCount}个账号`), true;
+    return console.log(`共找到${userList.length}个账号`), true; //true == !0
 }
-/////////////////////////////////////////////////////////////////////////////////
-function getMiddleValue(str1, str2, inputString) {
-    var regex = new RegExp(str1 + "(.*?)" + str2);
-    var result = regex.exec(inputString);
-    if (result && result.length > 1) {
-        return result[1];
-    } else {
-        return "";
-    }
-}
-function local_hours() {
-    let myDate = new Date();
-    let h = myDate.getHours();
-    return h;
-}
-function randomszdx(e) {
-    e = e || 32;
-    var t = "QWERTYUIOPASDFGHJKLZXCVBNM1234567890",
-        a = t.length,
-        n = "";
-    for (i = 0; i < e; i++) n += t.charAt(Math.floor(Math.random() * a));
-    return n;
-}
-function httpRequest(options, method) {
-    method = options.method ? options.method.toLowerCase() : (options.body ? 'post' : 'get');
-    return new Promise((resolve) => {
-        $[method](options, (err, resp, data) => {
+//Env Api =============================
+/*
+*   @modifyAuthor @smallfawn 
+*   @modifyTime 2024-03-25
+*   @modifyInfo 重写请求函数 在got环境或axios环境都可以请求 删除不必要的函数
+*/
+function Env(t, s) {
+    return new (class {
+        constructor(t, s) {
+            this.name = t;
+            this.data = null;
+            this.dataFile = "box.dat";
+            this.logs = [];
+            this.logSeparator = "\n";
+            this.startTime = new Date().getTime();
+            Object.assign(this, s);
+            this.log("", `\ud83d\udd14${this.name},\u5f00\u59cb!`);
+        }
+        isNode() {
+            return "undefined" != typeof module && !!module.exports;
+        }
+        isQuanX() {
+            return "undefined" != typeof $task;
+        }
+        isSurge() {
+            return "undefined" != typeof $httpClient && "undefined" == typeof $loon;
+        }
+        isLoon() {
+            return "undefined" != typeof $loon;
+        }
+        async loaddata() {
+            if (!this.isNode()) return {};
+            this.fs = this.fs ? this.fs : require("fs");
+            this.path = this.path ? this.path : require("path");
+            const t = this.path.resolve(this.dataFile),
+                s = this.path.resolve(process.cwd(), this.dataFile),
+                e = this.fs.existsSync(t),
+                i = !e && this.fs.existsSync(s);
+            if (!e && !i) this.writeFile(this.dataFile, JSON.stringify([]));
+            const pt = e ? t : s;
+            let r = await this.readFile(pt);
+            return r
+        }
+        async writedata() {
+            if (!this.isNode()) return;
+            this.fs = this.fs ? this.fs : require("fs");
+            this.path = this.path ? this.path : require("path");
+            const t = this.path.resolve(this.dataFile),
+                s = this.path.resolve(process.cwd(), this.dataFile),
+                e = this.fs.existsSync(t),
+                i = !e && this.fs.existsSync(s);
+            const o = JSON.stringify(this.data, null, 2);
+            const pt = e ? t : i ? s : t;
+            await writeFile(pt, o)
+        }
+        readFile(pt) {
+            this.fs = this.fs ? this.fs : require("fs");
+            return new Promise((resolve, reject) => {
+                this.fs.readFile(pt, "utf8", (r, o) => {
+                    if (r) reject({});
+                    else o = this.isJSONString(o) ? JSON.parse(o) : o;
+                    resolve(o);
+                });
+            });
+        }
+        writeFile(pt, o) {
+            this.fs = this.fs ? this.fs : require("fs");
+            return new Promise((resolve, reject) => {
+                this.fs.writeFile(pt, o, (r) => {
+                    if (r) reject(r);
+                    else resolve();
+                });
+            });
+        }
+        async getval(t) {
+            if (this.isSurge() || this.isLoon()) {
+                return $persistentStore.read(t);
+            } else if (this.isQuanX()) {
+                return $prefs.valueForKey(t);
+            } else if (this.isNode()) {
+                this.data = await this.loaddata();
+                return await this.data[t];
+            } else {
+                return (this.data && this.data[t]) || null;
+            }
+        }
+        async setval(t, s) {
+            if (this.isSurge() || this.isLoon()) {
+                return $persistentStore.write(t, s);
+            } else if (this.isQuanX()) {
+                return $prefs.setValueForKey(t, s);
+            } else if (this.isNode()) {
+                this.data = await this.loaddata();
+                this.data[s] = t;
+                await this.writedata();
+                return true;
+            } else {
+                return (this.data && this.data[s]) || null;
+            }
+        }
+        initRequestEnv(t) {
             try {
-                if (err) {
-                    console.log(`${method}请求失败`);
-                    $.logErr(err);
-                } else {
-                    if (data) {
-                        typeof JSON.parse(data) == 'object' ? data = JSON.parse(data) : data = data
-                        resolve(data)
-                    } else {
-                        console.log(`请求api返回数据为空，请检查自身原因`)
-                    }
+                require.resolve("got") &&
+                    ((this.requset = require("got")), (this.requestModule = "got"));
+            } catch (e) { }
+            try {
+                require.resolve("axios") &&
+                    ((this.requset = require("axios")), (this.requestModule = "axios"));
+            } catch (e) { }
+            this.cktough = this.cktough ? this.cktough : require("tough-cookie");
+            this.ckjar = this.ckjar ? this.ckjar : new this.cktough.CookieJar();
+            if (t) {
+                t.headers = t.headers ? t.headers : {};
+                if (
+                    typeof t.headers.Cookie === "undefined" &&
+                    typeof t.cookieJar === "undefined"
+) {
+                    t.cookieJar = this.ckjar;
                 }
-            } catch (e) {
-                $.logErr(e, resp);
-            } finally {
-                resolve();
             }
-        })
-    })
-}
-function getVersion(scriptUrl, timeout = 3 * 1000) {
-    return new Promise((resolve) => {
-        let options = {
-            url: `https:${scriptUrl}`,
         }
-        $.get(options, async (err, resp, data) => {
+        queryStr(options) {
+            return Object.entries(options)
+                .map(
+                    ([key, value]) =>
+                        `${key}=${typeof value === "object" ? JSON.stringify(value) : value
+                        }`
+)
+                .join("&");
+        }
+        getURLParams(url) {
+            const params = {};
+            const queryString = url.split("?")[1];
+            if (queryString) {
+                const paramPairs = queryString.split("&");
+                paramPairs.forEach((pair) => {
+                    const [key, value] = pair.split("=");
+                    params[key] = value;
+                });
+            }
+            return params;
+        }
+        isJSONString(str) {
             try {
-                let regex = /scriptVersionNow\s*=\s*(["'`])([\d.]+)\1/;
-                let match = data.match(regex);
-                scriptVersionLatest = match ? match[2] : '';
+                return JSON.parse(str) && typeof JSON.parse(str) === "object";
             } catch (e) {
-                $.logErr(e, resp);
-            } finally {
-                resolve()
+                return false;
             }
-        }, timeout)
-    })
-}
-async function getShareCodes(jsName) {
-    try {
-        const urls = [
-            `https://${jsName}.json`,
-            `https:${jsName}.json`,
-            `https://${jsName}.json`,
-        ];
-        let shareCodes = null;
-        for (const url of urls) {
-            const options = {
-                url,
-                headers: { "User-Agent": "" }
+        }
+        isJson(obj) {
+            var isjson =
+                typeof obj == "object" &&
+                Object.prototype.toString.call(obj).toLowerCase() ==
+                "[object object]" &&
+                !obj.length;
+            return isjson;
+        }
+        async sendMsg(message) {
+            if (!message) return;
+            if ($.isNode()) {
+                await notify.sendNotify($.name, message);
+            } else {
+                $.msg($.name, "", message);
+            }
+        }
+        async httpRequest(options) {
+            let t = { ...options };
+            t.headers = t.headers || {};
+            if (t.params) {
+                t.url += "?" + this.queryStr(t.params);
+            }
+            t.method = t.method.toLowerCase();
+            if (t.method === "get") {
+                delete t.headers["Content-Type"];
+                delete t.headers["Content-Length"];
+                delete t.headers["content-type"];
+                delete t.headers["content-length"];
+                delete t.body;
+            } else if (t.method === "post") {
+                let ContentType;
+                if (!t.body) {
+                    t.body = "";
+                } else if (typeof t.body === "string") {
+                    ContentType = this.isJSONString(t.body)
+                        ? "application/json"
+                        : "application/x-www-form-urlencoded";
+                } else if (this.isJson(t.body)) {
+                    t.body = JSON.stringify(t.body);
+                    ContentType = "application/json";
+                }
+                if (!t.headers["Content-Type"] && !t.headers["content-type"]) {
+                    t.headers["Content-Type"] = ContentType;
+                }
+            }
+            if (this.isNode()) {
+                this.initRequestEnv(t);
+                if (this.requestModule === "axios" && t.method === "post") {
+                    t.data = t.body;
+                    delete t.body;
+                }
+                let httpResult;
+                if (this.requestModule === "got") {
+                    httpResult = await this.requset(t);
+                    if (this.isJSONString(httpResult.body)) {
+                        httpResult.body = JSON.parse(httpResult.body);
+                    }
+                } else if (this.requestModule === "axios") {
+                    httpResult = await this.requset(t);
+                    httpResult.body = httpResult.data;
+                }
+                return httpResult;
+            }
+            if (this.isQuanX()) {
+                t.method = t.method.toUpperCase();
+                return new Promise((resolve, reject) => {
+                    $task.fetch(t).then((response) => {
+                        if (this.isJSONString(response.body)) {
+                            response.body = JSON.parse(response.body);
+                        }
+                        resolve(response);
+                    });
+                });
+            }
+        }
+        randomNumber(length) {
+            const characters = "0123456789";
+            return Array.from(
+                { length },
+                () => characters[Math.floor(Math.random() * characters.length)]
+).join("");
+        }
+        randomString(length) {
+            const characters = "abcdefghijklmnopqrstuvwxyz0123456789";
+            return Array.from(
+                { length },
+                () => characters[Math.floor(Math.random() * characters.length)]
+).join("");
+        }
+        timeStamp() {
+            return new Date().getTime();
+        }
+        uuid() {
+            return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
+                /[xy]/g,
+                function (c) {
+                    var r = (Math.random() * 16) | 0,
+                        v = c == "x" ? r : (r & 0x3) | 0x8;
+                    return v.toString(16);
+                }
+);
+        }
+        time(t) {
+            let s = {
+                "M+": new Date().getMonth() + 1,
+                "d+": new Date().getDate(),
+                "H+": new Date().getHours(),
+                "m+": new Date().getMinutes(),
+                "s+": new Date().getSeconds(),
+                "q+": Math.floor((new Date().getMonth() + 3) / 3),
+                S: new Date().getMilliseconds(),
             };
-            const result = await httpRequest(options);
-            if (result) {
-                shareCodes = result['keyword']
-                break;
+            /(y+)/.test(t) &&
+                (t = t.replace(
+                    RegExp.$1,
+                    (new Date().getFullYear() + "").substr(4 - RegExp.$1.length)
+));
+            for (let e in s)
+                new RegExp("(" + e + ")").test(t) &&
+                    (t = t.replace(
+                        RegExp.$1,
+                        1 == RegExp.$1.length
+                            ? s[e]
+                            : ("00" + s[e]).substr(("" + s[e]).length)
+));
+            return t;
+        }
+        msg(s = t, e = "", i = "", o) {
+            const h = (t) =>
+                !t || (!this.isLoon() && this.isSurge())
+                    ? t
+                    : "string" == typeof t
+                        ? this.isLoon()
+                            ? t
+                            : this.isQuanX()
+                                ? { "open-url": t }
+                                : void 0
+                        : "object" == typeof t && (t["open-url"] || t["media-url"])
+                            ? this.isLoon()
+                                ? t["open-url"]
+                                : this.isQuanX()
+                                    ? t
+                                    : void 0
+                            : void 0;
+            this.isMute ||
+                (this.isSurge() || this.isLoon()
+                    ? $notification.post(s, e, i, h(o))
+                    : this.isQuanX() && $notify(s, e, i, h(o)));
+            let logs = ["", "==============📣系统通知📣=============="];
+            logs.push(t);
+            e ? logs.push(e) : "";
+            i ? logs.push(i) : "";
+            console.log(logs.join("\n"));
+            this.logs = this.logs.concat(logs);
+        }
+        log(...t) {
+            t.length > 0 && (this.logs = [...this.logs, ...t]),
+                console.log(t.join(this.logSeparator));
+        }
+        logErr(t, s) {
+            const e = !this.isSurge() && !this.isQuanX() && !this.isLoon();
+            e
+                ? this.log("", `\u2757\ufe0f${this.name},\u9519\u8bef!`, t.stack)
+                : this.log("", `\u2757\ufe0f${this.name},\u9519\u8bef!`, t);
+        }
+        wait(t) {
+            return new Promise((s) => setTimeout(s, t));
+        }
+        done(t = {}) {
+            const s = new Date().getTime(),
+                e = (s - this.startTime) / 1e3;
+            this.log(
+                "",
+                `\ud83d\udd14${this.name},\u7ed3\u675f!\ud83d\udd5b ${e}\u79d2`
+);
+            this.log();
+            if (this.isNode()) {
+                process.exit(1);
+            }
+            if (this.isQuanX()) {
+                $done(t);
             }
         }
-        return shareCodes
-    } catch (e) {
-        console.log(e);
-    }
+    })(t, s);
 }
-async function getNotice() {
-    try {
-        const urls = ["Notice.json",
-            "https://Notice.json",
-            "https://Notice.json",
-            "https:Notice.json"
-        ];
-        let notice = null;
-        for (const url of urls) {
-            const options = {
-                url,
-                headers: { "User-Agent": "" }
-            };
-            const result = await httpRequest(options);
-            if (result && "notice" in result) {
-                notice = result.notice.replace(/\\n/g, '\n');
-                break;
-            }
-        }
-        if (notice) {
-            DoubleLog(notice);
-        }
-    } catch (e) {
-        console.log(e);
-    }
-}
-function DoubleLog(data) {
-    if ($.isNode()) {
-        if (data) {
-            console.log(`${data}`);
-            msg += `\n${data}`
-        }
-    } else {
-        console.log(`${data}`);
-        msg += `\n${data}`
-    }
-}
-async function SendMsg(message) {
-    if (!message) return;
-    if (Notify > 0) {
-        if ($.isNode()) {
-            await notify.sendNotify($.name, message)
-        } else {
-            $.msg($.name, '', message)
-        }
-    } else {
-        console.log(message)
-    }
-}
-//  Env
-function Env(t, e) { class s { constructor(t) { this.env = t } send(t, e = "GET") { t = "string" == typeof t ? { url: t } : t; let s = this.get; return "POST" === e && (s = this.post), new Promise((e, a) => { s.call(this, t, (t, s, r) => { t ? a(t) : e(s) }) }) } get(t) { return this.send.call(this.env, t) } post(t) { return this.send.call(this.env, t, "POST") } } return new class { constructor(t, e) { this.name = t, this.http = new s(this), this.data = null, this.dataFile = "box.dat", this.logs = [], this.isMute = !1, this.isNeedRewrite = !1, this.logSeparator = "\n", this.encoding = "utf-8", this.startTime = (new Date).getTime(), Object.assign(this, e), this.log("", `\ud83d\udd14${this.name}, \u5f00\u59cb!`) } getEnv() { return "undefined" != typeof $environment && $environment["surge-version"] ? "Surge" : "undefined" != typeof $environment && $environment["stash-version"] ? "Stash" : "undefined" != typeof module && module.exports ? "Node.js" : "undefined" != typeof $task ? "Quantumult X" : "undefined" != typeof $loon ? "Loon" : "undefined" != typeof $rocket ? "Shadowrocket" : void 0 } isNode() { return "Node.js" === this.getEnv() } isQuanX() { return "Quantumult X" === this.getEnv() } isSurge() { return "Surge" === this.getEnv() } isLoon() { return "Loon" === this.getEnv() } isShadowrocket() { return "Shadowrocket" === this.getEnv() } isStash() { return "Stash" === this.getEnv() } toObj(t, e = null) { try { return JSON.parse(t) } catch { return e } } toStr(t, e = null) { try { return JSON.stringify(t) } catch { return e } } getjson(t, e) { let s = e; const a = this.getdata(t); if (a) try { s = JSON.parse(this.getdata(t)) } catch { } return s } setjson(t, e) { try { return this.setdata(JSON.stringify(t), e) } catch { return !1 } } getScript(t) { return new Promise(e => { this.get({ url: t }, (t, s, a) => e(a)) }) } runScript(t, e) { return new Promise(s => { let a = this.getdata("@chavy_boxjs_userCfgs.httpapi"); a = a ? a.replace(/\n/g, "").trim() : a; let r = this.getdata("@chavy_boxjs_userCfgs.httpapi_timeout"); r = r ? 1 * r : 20, r = e && e.timeout ? e.timeout : r; const [i, o] = a.split("@"), n = { url: `http://${o}/v1/scripting/evaluate`, body: { script_text: t, mock_type: "cron", timeout: r }, headers: { "X-Key": i, Accept: "*/*" }, timeout: r }; this.post(n, (t, e, a) => s(a)) }).catch(t => this.logErr(t)) } loaddata() { if (!this.isNode()) return {}; { this.fs = this.fs ? this.fs : require("fs"), this.path = this.path ? this.path : require("path"); const t = this.path.resolve(this.dataFile), e = this.path.resolve(process.cwd(), this.dataFile), s = this.fs.existsSync(t), a = !s && this.fs.existsSync(e); if (!s && !a) return {}; { const a = s ? t : e; try { return JSON.parse(this.fs.readFileSync(a)) } catch (t) { return {} } } } } writedata() { if (this.isNode()) { this.fs = this.fs ? this.fs : require("fs"), this.path = this.path ? this.path : require("path"); const t = this.path.resolve(this.dataFile), e = this.path.resolve(process.cwd(), this.dataFile), s = this.fs.existsSync(t), a = !s && this.fs.existsSync(e), r = JSON.stringify(this.data); s ? this.fs.writeFileSync(t, r) : a ? this.fs.writeFileSync(e, r) : this.fs.writeFileSync(t, r) } } lodash_get(t, e, s) { const a = e.replace(/\[(\d+)\]/g, ".$1").split("."); let r = t; for (const t of a) if (r = Object(r)[t], void 0 === r) return s; return r } lodash_set(t, e, s) { return Object(t) !== t ? t : (Array.isArray(e) || (e = e.toString().match(/[^.[\]]+/g) || []), e.slice(0, -1).reduce((t, s, a) => Object(t[s]) === t[s] ? t[s] : t[s] = Math.abs(e[a + 1]) >> 0 == +e[a + 1] ? [] : {}, t)[e[e.length - 1]] = s, t) } getdata(t) { let e = this.getval(t); if (/^@/.test(t)) { const [, s, a] = /^@(.*?)\.(.*?)$/.exec(t), r = s ? this.getval(s) : ""; if (r) try { const t = JSON.parse(r); e = t ? this.lodash_get(t, a, "") : e } catch (t) { e = "" } } return e } setdata(t, e) { let s = !1; if (/^@/.test(e)) { const [, a, r] = /^@(.*?)\.(.*?)$/.exec(e), i = this.getval(a), o = a ? "null" === i ? null : i || "{}" : "{}"; try { const e = JSON.parse(o); this.lodash_set(e, r, t), s = this.setval(JSON.stringify(e), a) } catch (e) { const i = {}; this.lodash_set(i, r, t), s = this.setval(JSON.stringify(i), a) } } else s = this.setval(t, e); return s } getval(t) { switch (this.getEnv()) { case "Surge": case "Loon": case "Stash": case "Shadowrocket": return $persistentStore.read(t); case "Quantumult X": return $prefs.valueForKey(t); case "Node.js": return this.data = this.loaddata(), this.data[t]; default: return this.data && this.data[t] || null } } setval(t, e) { switch (this.getEnv()) { case "Surge": case "Loon": case "Stash": case "Shadowrocket": return $persistentStore.write(t, e); case "Quantumult X": return $prefs.setValueForKey(t, e); case "Node.js": return this.data = this.loaddata(), this.data[e] = t, this.writedata(), !0; default: return this.data && this.data[e] || null } } initGotEnv(t) { this.got = this.got ? this.got : require("got"), this.cktough = this.cktough ? this.cktough : require("tough-cookie"), this.ckjar = this.ckjar ? this.ckjar : new this.cktough.CookieJar, t && (t.headers = t.headers ? t.headers : {}, void 0 === t.headers.Cookie && void 0 === t.cookieJar && (t.cookieJar = this.ckjar)) } get(t, e = (() => { })) { switch (t.headers && (delete t.headers["Content-Type"], delete t.headers["Content-Length"], delete t.headers["content-type"], delete t.headers["content-length"]), this.getEnv()) { case "Surge": case "Loon": case "Stash": case "Shadowrocket": default: this.isSurge() && this.isNeedRewrite && (t.headers = t.headers || {}, Object.assign(t.headers, { "X-Surge-Skip-Scripting": !1 })), $httpClient.get(t, (t, s, a) => { !t && s && (s.body = a, s.statusCode = s.status ? s.status : s.statusCode, s.status = s.statusCode), e(t, s, a) }); break; case "Quantumult X": this.isNeedRewrite && (t.opts = t.opts || {}, Object.assign(t.opts, { hints: !1 })), $task.fetch(t).then(t => { const { statusCode: s, statusCode: a, headers: r, body: i, bodyBytes: o } = t; e(null, { status: s, statusCode: a, headers: r, body: i, bodyBytes: o }, i, o) }, t => e(t && t.error || "UndefinedError")); break; case "Node.js": let s = require("iconv-lite"); this.initGotEnv(t), this.got(t).on("redirect", (t, e) => { try { if (t.headers["set-cookie"]) { const s = t.headers["set-cookie"].map(this.cktough.Cookie.parse).toString(); s && this.ckjar.setCookieSync(s, null), e.cookieJar = this.ckjar } } catch (t) { this.logErr(t) } }).then(t => { const { statusCode: a, statusCode: r, headers: i, rawBody: o } = t, n = s.decode(o, this.encoding); e(null, { status: a, statusCode: r, headers: i, rawBody: o, body: n }, n) }, t => { const { message: a, response: r } = t; e(a, r, r && s.decode(r.rawBody, this.encoding)) }) } } post(t, e = (() => { })) { const s = t.method ? t.method.toLocaleLowerCase() : "post"; switch (t.body && t.headers && !t.headers["Content-Type"] && !t.headers["content-type"] && (t.headers["content-type"] = "application/x-www-form-urlencoded"), t.headers && (delete t.headers["Content-Length"], delete t.headers["content-length"]), this.getEnv()) { case "Surge": case "Loon": case "Stash": case "Shadowrocket": default: this.isSurge() && this.isNeedRewrite && (t.headers = t.headers || {}, Object.assign(t.headers, { "X-Surge-Skip-Scripting": !1 })), $httpClient[s](t, (t, s, a) => { !t && s && (s.body = a, s.statusCode = s.status ? s.status : s.statusCode, s.status = s.statusCode), e(t, s, a) }); break; case "Quantumult X": t.method = s, this.isNeedRewrite && (t.opts = t.opts || {}, Object.assign(t.opts, { hints: !1 })), $task.fetch(t).then(t => { const { statusCode: s, statusCode: a, headers: r, body: i, bodyBytes: o } = t; e(null, { status: s, statusCode: a, headers: r, body: i, bodyBytes: o }, i, o) }, t => e(t && t.error || "UndefinedError")); break; case "Node.js": let a = require("iconv-lite"); this.initGotEnv(t); const { url: r, ...i } = t; this.got[s](r, i).then(t => { const { statusCode: s, statusCode: r, headers: i, rawBody: o } = t, n = a.decode(o, this.encoding); e(null, { status: s, statusCode: r, headers: i, rawBody: o, body: n }, n) }, t => { const { message: s, response: r } = t; e(s, r, r && a.decode(r.rawBody, this.encoding)) }) } } time(t, e = null) { const s = e ? new Date(e) : new Date; let a = { "M+": s.getMonth() + 1, "d+": s.getDate(), "H+": s.getHours(), "m+": s.getMinutes(), "s+": s.getSeconds(), "q+": Math.floor((s.getMonth() + 3) / 3), S: s.getMilliseconds() }; /(y+)/.test(t) && (t = t.replace(RegExp.$1, (s.getFullYear() + "").substr(4 - RegExp.$1.length))); for (let e in a) new RegExp("(" + e + ")").test(t) && (t = t.replace(RegExp.$1, 1 == RegExp.$1.length ? a[e] : ("00" + a[e]).substr(("" + a[e]).length))); return t } queryStr(t) { let e = ""; for (const s in t) { let a = t[s]; null != a && "" !== a && ("object" == typeof a && (a = JSON.stringify(a)), e += `${s}=${a}&`) } return e = e.substring(0, e.length - 1), e } msg(e = t, s = "", a = "", r) { const i = t => { switch (typeof t) { case void 0: return t; case "string": switch (this.getEnv()) { case "Surge": case "Stash": default: return { url: t }; case "Loon": case "Shadowrocket": return t; case "Quantumult X": return { "open-url": t }; case "Node.js": return }case "object": switch (this.getEnv()) { case "Surge": case "Stash": case "Shadowrocket": default: { let e = t.url || t.openUrl || t["open-url"]; return { url: e } } case "Loon": { let e = t.openUrl || t.url || t["open-url"], s = t.mediaUrl || t["media-url"]; return { openUrl: e, mediaUrl: s } } case "Quantumult X": { let e = t["open-url"] || t.url || t.openUrl, s = t["media-url"] || t.mediaUrl, a = t["update-pasteboard"] || t.updatePasteboard; return { "open-url": e, "media-url": s, "update-pasteboard": a } } case "Node.js": return }default: return } }; if (!this.isMute) switch (this.getEnv()) { case "Surge": case "Loon": case "Stash": case "Shadowrocket": default: $notification.post(e, s, a, i(r)); break; case "Quantumult X": $notify(e, s, a, i(r)); break; case "Node.js": }if (!this.isMuteLog) { let t = ["", "==============\ud83d\udce3\u7cfb\u7edf\u901a\u77e5\ud83d\udce3=============="]; t.push(e), s && t.push(s), a && t.push(a), console.log(t.join("\n")), this.logs = this.logs.concat(t) } } log(...t) { t.length > 0 && (this.logs = [...this.logs, ...t]), console.log(t.join(this.logSeparator)) } logErr(t, e) { switch (this.getEnv()) { case "Surge": case "Loon": case "Stash": case "Shadowrocket": case "Quantumult X": default: this.log("", `\u2757\ufe0f${this.name}, \u9519\u8bef!`, t); break; case "Node.js": this.log("", `\u2757\ufe0f${this.name}, \u9519\u8bef!`, t.stack) } } wait(t) { return new Promise(e => setTimeout(e, t)) } done(t = {}) { const e = (new Date).getTime(), s = (e - this.startTime) / 1e3; switch (this.log("", `\ud83d\udd14${this.name}, \u7ed3\u675f! \ud83d\udd5b ${s} \u79d2`), this.log(), this.getEnv()) { case "Surge": case "Loon": case "Stash": case "Shadowrocket": case "Quantumult X": default: $done(t); break; case "Node.js": process.exit(1) } } }(t, e) }
