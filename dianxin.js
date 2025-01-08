@@ -5,7 +5,7 @@
 //改为自己的DOCKER地址  
 //青龙环境防止SSL报错
 //export NODE_OPTIONS="${NODE_OPTIONS} --tls-cipher-list=DEFAULT@SECLEVEL=0"
-let ruishuApi = 'http://192.168.31.197:1257'
+let ruishuApi = 'http://192.168.31.201:1257'
 
 
 
