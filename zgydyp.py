@@ -6,7 +6,7 @@
 # corn: 0 0 8,16,20 * * *
 # const $ = new Env('中国移动云盘');
 """
-设置环境变量，ydyp_ck，格式 Basic XXXXXXXX#手机号#token
+设置环境变量，ydyp_ck，格式 Basic XXXXXXXX#手机号#token#rekey#Os_SSo_Sid
 多个账号用@分割
 """
 import asyncio
@@ -21,12 +21,17 @@ import httpx
 import requests
 
 from fn_print import fn_print
-from get_env import get_env
 from sendNotify import send_notification_message_collection
+
+
 
 ua = "Mozilla/5.0 (Linux; Android 11; M2012K10C Build/RP1A.200720.011; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/90.0.4430.210 Mobile Safari/537.36 MCloudApp/10.0.1"
 
-ydyp_ck = get_env("ydyp_ck", "@")
+if 'ydyp_ck' in os.environ:
+    ydyp_ck = re.split("@", os.environ.get("ydyp_ck"))
+else:
+    ydyp_ck = []
+    fn_print("未查找到ydyp_ck变量.")
 
 
 class MobileCloudDisk:
@@ -35,7 +40,7 @@ class MobileCloudDisk:
         self.notebook_id = None
         self.note_token = None
         self.note_auth = None
-        self.click_num = 15  # 定义抽奖次数和抽抽乐-享好礼戳一戳次数
+        self.click_num = 15  # 定义抽奖次数和摇一摇戳一戳次数
         self.draw = 1  # 定义抽奖次数，首次免费
         self.timestamp = str(int(round(time.time() * 1000)))
         self.cookies = {'sensors_stay_time': self.timestamp}
@@ -43,8 +48,8 @@ class MobileCloudDisk:
         self.account = cookie.split("#")[1]
         self.auth_token = cookie.split("#")[2]
         self.encrypt_account = self.account[:3] + "*" * 4 + self.account[7:]
-        # self.rmkey = cookie.split("#")[3]
-        # self.Os_SSo_Sid = cookie.split("#")[4]
+        self.rmkey = cookie.split("#")[3]
+        self.Os_SSo_Sid = cookie.split("#")[4]
         self.fruit_url = 'https://happy.mail.10086.cn/jsp/cn/garden/'
         self.JwtHeaders = {
             'User-Agent': ua,
@@ -363,7 +368,7 @@ class MobileCloudDisk:
 
     async def shake(self):
         """
-        抽抽乐-享好礼
+        摇一摇
         :return: 
         """
         successful_shake = 0
@@ -379,16 +384,16 @@ class MobileCloudDisk:
                     await asyncio.sleep(1)
                     shake_prize_config = shake_response_data["result"].get("shakePrizeConfig")
                     if shake_prize_config:
-                        fn_print(f"用户【{self.account}】，===抽抽乐-享好礼抽奖成功✅✅===, 获得：{shake_prize_config['name']}🎉🎉")
+                        fn_print(f"用户【{self.account}】，===摇一摇成功✅✅===, 获得：{shake_prize_config['name']}🎉🎉")
                         successful_shake += 1
                     else:
-                        fn_print(f"抽抽乐-享好礼抽奖未中奖")
+                        fn_print(f"摇一摇未中奖，{shake_response_data}")
                 else:
-                    fn_print(f"抽抽乐-享好礼抽奖发生异常：{responses.status_code}")
+                    fn_print(f"摇一摇发生异常：{responses.status_code}")
         except Exception as e:
-            fn_print(f"抽抽乐-享好礼执行异常：{e}")
+            fn_print(f"摇一摇执行异常：{e}")
         if successful_shake == 0:
-            fn_print(f"用户【{self.account}】，===未抽中 x {self.click_num}❌===")
+            fn_print(f"用户【{self.account}】，===未摇中 x {self.click_num}❌===")
 
     async def surplus_num(self):
         """
@@ -430,216 +435,6 @@ class MobileCloudDisk:
                 fn_print(f"查询剩余抽奖次数发生异常：{draw_info_data.get('msg')}")
         else:
             fn_print(f"查询剩余抽奖次数发生异常：{draw_info_response.status_code}")
-
-    async def fruit_login(self):
-        """
-        果园
-        :return: 
-        """
-        token = await self.refresh_token()
-        if token is not None:
-            fn_print(f"用户【{self.account}】，===果园专区Token刷新成功✅✅===")
-            await self.rm_sleep()
-            login_info_url = f'{self.fruit_url}login/caiyunsso.do?token={token}&account={self.account}&targetSourceId=001208&sourceid=1003&enableShare=1'
-            headers = {
-                'Host': 'happy.mail.10086.cn', 'Upgrade-Insecure-Requests': '1', 'User-Agent': ua,
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
-                'Referer': 'https://caiyun.feixin.10086.cn:7071/',
-                'Accept-Language': 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7'
-            }
-            login_info_data = requests.request("""GET""", login_info_url, headers=headers, verify=False)
-            treeCookie = login_info_data.request.headers['Cookie']
-            self.treetHeaders['Cookie'] = treeCookie
-            do_login_url = f'{self.fruit_url}login/userinfo.do'
-            do_login_response = await self.client.get(
-                url=do_login_url,
-                headers=self.treetHeaders
-            )
-            if do_login_response.status_code == 200:
-                do_login_data = do_login_response.json()
-                if do_login_data.get('result', {}).get('islogin') != 1:
-                    fn_print(f"用户【{self.account}】，===果园专区登录失败❌===")
-                    return
-                await self.fruit_task()
-            else:
-                fn_print(f"果园专区登录请求发生异常：{do_login_response.status_code}")
-        else:
-            fn_print(f"用户【{self.account}】，===果园专区Token刷新失败❌===")
-
-    async def fruit_task(self):
-        """
-        果园专区任务
-        :return: 
-        """
-        # 签到
-        check_sign_responses = await self.client.get(
-            url=f"{self.fruit_url}task/checkinInfo.do",
-            headers=self.treetHeaders
-        )
-        if check_sign_responses.status_code == 200:
-            check_sign_data = check_sign_responses.json()
-            if check_sign_data.get("success"):
-                today_checkin = check_sign_data.get("result", {}).get("todayCheckin", 0)
-                if today_checkin == 1:
-                    fn_print(f"用户【{self.account}】，===今日已签到☑️☑️===")
-                else:
-                    check_in_data = await self.client.get(
-                        url=f"{self.fruit_url}task/checkin.do",
-                        headers=self.treetHeaders
-                    )
-                    if check_in_data.status_code == 200:
-                        check_in_data = check_in_data.json()
-                        if check_in_data.get("result", {}).get("code", "") == 1:
-                            fn_print(f"用户【{self.account}】，===签到成功✅✅===")
-                            await self.rm_sleep()
-                            water_response = await self.client.get(
-                                url=f'{self.fruit_url}user/clickCartoon.do?cartoonType=widget',
-                                headers=self.treetHeaders
-                            )
-                            if water_response.status_code == 200:
-                                water_data = water_response.json()
-                            else:
-                                fn_print(f"领取水滴请求发生异常：{water_response.status_code}")
-                            color_response = await self.client.get(
-                                url=f'{self.fruit_url}user/clickCartoon.do?cartoonType=color',
-                                headers=self.treetHeaders
-                            )
-                            if color_response.status_code == 200:
-                                color_data = color_response.json()
-                            else:
-                                fn_print(f"领取每日雨滴请求发生异常：{color_response.status_code}")
-                            given_water = water_data.get("result", {}).get("given", 0)
-                            fn_print(f"用户【{self.account}】，===领取每日水滴💧💧：{given_water}===")
-                            fn_print(f"用户【{self.account}】，===领取每日雨滴💧💧：{color_data.get('result').get('msg')}===")
-                        else:
-                            fn_print(f"用户【{self.account}】，===签到失败❌===")
-                    else:
-                        fn_print(f"签到请求发生异常：{check_in_data.status_code}")
-            else:
-                fn_print(f"用户【{self.account}】，===果园签到查询失败❌, {check_sign_data.get('msg')}===")
-            # 获取任务列表
-            task_list_responses = await self.client.get(
-                url=f'{self.fruit_url}task/taskList.do?clientType=PE',
-                headers=self.treetHeaders
-            )
-            if task_list_responses.status_code == 200:
-                task_list_data = task_list_responses.json()
-                task_list = task_list_data.get('result', [])
-            else:
-                fn_print(f"任务列表请求发生异常：{task_list_responses.status_code}")
-            task_state_responses = await self.client.get(
-                url=f'{self.fruit_url}task/taskState.do',
-                headers=self.treetHeaders
-            )
-            if task_state_responses.status_code == 200:
-                task_state_data = task_state_responses.json()
-                task_state_result = task_state_data.get('result', [])
-            else:
-                fn_print(f"任务状态请求发生异常：{task_state_responses.status_code}")
-            for task in task_list:
-                task_id = task.get('taskId', "")
-                task_name = task.get('taskName', "")
-                water_num = task.get('waterNum', 0)
-                if task_id == 2002 or task_id == 2003:
-                    continue
-                task_state = next(
-                    (state.get('taskState', 0) for state in task_state_result if state.get('taskId') == task_id), 0)
-                if task_state == 2:
-                    fn_print(f"用户【{self.account}】，===任务【{task_name}】已完成✅✅===")
-                else:
-                    await self.do_fruit_task(task_name, task_id, water_num)
-            await self.tree_info()
-        else:
-            fn_print(f"签到请求发生异常：{check_sign_responses.status_code}")
-
-    async def do_fruit_task(self, task_name, task_id, water_num):
-        """
-        执行果园任务
-        :param task_name: 
-        :param task_id: 
-        :param water_num: 
-        :return: 
-        """
-        fn_print(f"用户【{self.account}】，===任务【{task_name}】开始执行🚀🚀===")
-        do_task_url = f'{self.fruit_url}task/doTask.do?taskId={task_id}'
-        do_task_response = await self.client.get(
-            url=do_task_url,
-            headers=self.treetHeaders
-        )
-        if do_task_response.status_code == 200:
-            do_task_data = do_task_response.json()
-            if do_task_data.get("success"):
-                get_water_url = f'{self.fruit_url}task/givenWater.do?taskId={task_id}'
-                get_water_response = await self.client.get(
-                    url=get_water_url,
-                    headers=self.treetHeaders
-                )
-                if get_water_response.status_code == 200:
-                    get_water_data = get_water_response.json()
-                    if get_water_data.get("success"):
-                        fn_print(f"用户【{self.account}】，===已完成任务【{task_name}】✅✅，领取水滴: {water_num}===")
-                    else:
-                        fn_print(
-                            f"用户【{self.account}】，===任务【{task_name}】领取水滴失败❌, {get_water_data.get('msg')}===")
-                else:
-                    fn_print(f"领取水滴请求发生异常：{get_water_response.status_code}")
-            else:
-                fn_print(f"用户【{self.account}】，===任务【{task_name}】执行失败❌, {do_task_data.get('msg')}===")
-        else:
-            fn_print(f"任务执行请求发生异常：{do_task_response.status_code}")
-
-    async def tree_info(self):
-        """
-        查询果园信息
-        :return: 
-        """
-        tree_info_url = f'{self.fruit_url}user/treeInfo.do'
-        tree_info_responses = await self.client.get(
-            url=tree_info_url,
-            headers=self.treetHeaders
-        )
-        if tree_info_responses.status_code == 200:
-            tree_info_data = tree_info_responses.json()
-            if not tree_info_data.get("success"):
-                fn_print(f"用户【{self.account}】，===获取果园任务列表失败❌, {tree_info_data.get('msg')}===")
-            else:
-                collect_water = tree_info_data.get("result", {}).get("collectWater", 0)
-                tree_level = tree_info_data.get("result", {}).get("treeLevel", 0)
-                fn_print(f"用户【{self.account}】，===当前小树等级：{tree_level}，剩余水滴：{collect_water}===")
-                if tree_level in (2, 4, 6, 8):
-                    # 开宝箱
-                    openbox_url = f'{self.fruit_url}prize/openBox.do'
-                    openbox_response = await self.client.get(
-                        url=openbox_url,
-                        headers=self.treetHeaders
-                    )
-                    if openbox_response.status_code == 200:
-                        openbox_data = openbox_response.json()
-                        fn_print(f"用户【{self.account}】，==={openbox_data.get('msg')}===")
-                    else:
-                        fn_print(f"开宝箱请求发生异常：{openbox_response.status_code}")
-                watering_amout = collect_water // 20  # 计算需要浇水的次数
-                watering_url = f'{self.fruit_url}user/watering.do?isFast=0'
-                if watering_amout > 0:
-                    for index in range(watering_amout):
-                        watering_response = await self.client.get(
-                            url=watering_url,
-                            headers=self.treetHeaders
-                        )
-                        if watering_response.status_code == 200:
-                            watering_data = watering_response.json()
-                            if watering_data.get("success"):
-                                fn_print(f"用户【{self.account}】，===已完成{index + 1}次浇水🌊🌊===")
-                            else:
-                                fn_print(f"用户【{self.account}】，===浇水失败❌, {watering_data.get('msg')}===")
-                            await asyncio.sleep(3)
-                        else:
-                            fn_print(f"浇水请求发生异常：{watering_response.status_code}")
-                else:
-                    fn_print(f"用户【{self.account}】，===水滴不足，无法浇水❌===")
-        else:
-            fn_print(f"查询果园信息请求发生异常：{tree_info_responses.status_code}")
-
 
     async def cloud_game(self):
         """
@@ -750,8 +545,6 @@ class MobileCloudDisk:
                 )
                 if cur_response.status_code == 200:
                     cur_data = cur_response.json()
-                    if isinstance(cur_data.get('result'), int):
-                        fn_print(f"异常：{cur_data.get('result')}")
                     fn_print(f"用户【{self.account}】，===获得云朵数量：{cur_data.get('result').get('result')}===")
                 else:
                     fn_print(f"用户【{self.account}】，===获取云朵数量请求失败❌，{cur_response.status_code}===")
@@ -957,12 +750,6 @@ class MobileCloudDisk:
         note_id = ''.join(random.choice(characters) for _ in range(length))
         return note_id
 
-    async def get_redeemable_reward_list(self):
-        """
-        获取可兑换奖励
-        :return: 
-        """
-
     async def run(self):
         if await self.jwt():
             fn_print("=========开始签到=========")
@@ -972,8 +759,6 @@ class MobileCloudDisk:
             await self.get_task_list(url="sign_in_3", app_type="cloud_app")
             fn_print("=========开始执行☁️云朵大作战=========")
             await self.cloud_game()
-            # fn_print("=========开始执行🌳果园任务=========")
-            # await self.fruit_login()
             fn_print("=========开始执行📝公众号任务=========")
             await self.wx_app_sign()
             await self.shake()
