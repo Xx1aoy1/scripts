@@ -1,4 +1,7 @@
 # 酷狗音乐
+# Powered by 呆呆呆呆
+# 账号变量：kgck（格式：token#userid，多账号分割符：&/新建变量/换行）
+# 验证码登录获取token网站：sm.linzixuan.work
 # 注意：如遇到运行报错，请安装以下python依赖：requests
 
 Check_Value = '27143354051231191952514507201214'
