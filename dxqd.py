@@ -49,7 +49,6 @@ import sys
 import asyncio
 import aiohttp
 import os
-import execjs
 import requests
 import re
 import time as time_module  # 重命名导入以避免冲突
@@ -409,7 +408,7 @@ def userLoginNormal(phone, password):
             ''.join(random.sample(alphabet, 12))
         ]
         timestamp = get_network_time().strftime("%Y%m%d%H%M%S")
-        loginAuthCipherAsymmertric = 'iPhone 14 15.4.' + uuid[0] + uuid[1] + phone + timestamp + password[:6] + '0$$$0.'
+        loginAuthCipherAsymmertric = 'Android 13 22081212C.' + uuid[0] + uuid[1] + phone + timestamp + password[:6] + '0$$$0.'
 
         # 发送登录请求
         start_time = time_module.time()
@@ -421,7 +420,7 @@ def userLoginNormal(phone, password):
                     "timestamp": timestamp,
                     "broadAccount": "", 
                     "broadToken": "",
-                    "clientType": "#10.5.0#channel50#iPhone 14 Pro Max#",
+                    "clientType": "#10.5.0#channel50#22081212C#",
                     "shopId": "20002", 
                     "source": "110003",
                     "sourcePassword": "Sid98s", 
