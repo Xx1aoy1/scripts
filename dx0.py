@@ -45,7 +45,7 @@ def printn(m):
     current_time = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
     print(f'\n[{current_time}] {m}')
 
-# --- 加密/解密/工具函数 ---
+# --- 加密/解密/工具函数（保持不变）---
 key = b'1234567`90koiuyhgtfrdews'
 iv = 8 * b'\0'
 
@@ -125,93 +125,142 @@ def save_claimed_account(filename, phone, lock):
         with open(filename, 'w') as f:
             json.dump(claimed_data, f, indent=4)
 
-# --- 核心业务逻辑函数 ---
-def get_ticket(phone, userId, token, ss):
+# =================== 新登录方法 login_v2 (Android) ===================
+def login_v2(phone: str, password: str, android_id: str, session: requests.Session):
+    """
+    使用 Android 设备标识登录，返回包含 uid(token) 的用户信息字典
+    """
+    m_phone = phone[:3] + '****' + phone[-4:] if len(phone) >= 7 else phone
+    printn(f"[登录v2] {m_phone} 开始登录 (AndroidId={android_id[:6]}...)")
+
     timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-    data = f'<Request><HeaderInfos><Code>getSingle</Code><Timestamp>{timestamp}</Timestamp><BroadAccount></BroadAccount><BroadToken></BroadToken><ClientType>#9.6.1#channel50#iPhone 14 Pro Max#</ClientType><ShopId>20002</ShopId><Source>110003</Source><SourcePassword>Sid98s</SourcePassword><Token>{token}</Token><UserLoginName>{phone}</UserLoginName></HeaderInfos><Content><Attach>test</Attach><FieldData><TargetId>{encrypt_des3(userId)}</TargetId><Url>4a6862274835b451</Url></FieldData></Content></Request>'
-    r = ss.post(
-        'https://appgologin.189.cn:9031/map/clientXML', # 修正URL，移除末尾空格
-        data=data,
-        headers={'user-agent': 'CtClient;10.4.1;Android;13;22081212C;NTQzNzgx!#!MTgwNTg1'},
-        verify=certifi.where()
-    )
-    tk = re.findall('<Ticket>(.*?)</Ticket>', r.text)
-    return decrypt_des3(tk[0]) if tk else False
+    # 随机生成设备UUID段
+    alphabet = 'abcdef0123456789'
+    uuid = [
+        ''.join(random.sample(alphabet, 8)),
+        ''.join(random.sample(alphabet, 4)),
+        '4' + ''.join(random.sample(alphabet, 3)),
+        ''.join(random.sample(alphabet, 4)),
+        ''.join(random.sample(alphabet, 12))
+    ]
+    device_part = uuid[0] + uuid[1] + uuid[2]  # 用于deviceUid
 
-def userLoginNormal(phone, password, ss):
-    try:
-        alphabet = 'abcdef0123456789'
-        uuid = [
-            ''.join(random.sample(alphabet, 8)),
-            ''.join(random.sample(alphabet, 4)),
-            '4' + ''.join(random.sample(alphabet, 3)),
-            ''.join(random.sample(alphabet, 4)),
-            ''.join(random.sample(alphabet, 12))
-        ]
-        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-        loginAuthCipherAsymmertric = 'iPhone 14 15.4.' + uuid[0] + uuid[1] + phone + timestamp + password[:6] + '0$$$0.'
-        # --- ⚠️ 关键修改区域 ⚠️ ---
-        # 请将下面的 URL 替换为你通过抓包获取到的 **真实有效的** 登录接口 URL
-        # 示例: login_url = 'https://appgologin.189.cn:9031/client/userLoginNormal'
-        # 示例: login_url = 'https://appgologin.189.cn:9031/api/auth/login'
-        # 示例: login_url = 'https://appgologin.189.cn:9031/v2/client/userLoginNormal'
-        # 当前 URL 是根据错误日志恢复的原始路径，已证实无效，请务必更新！
-        login_url = 'https://appgologin.189.cn:9031/login/client/userLoginNormal' # 恢复原始路径，因 /map/ 已证实无效
-        # --- ⚠️ 关键修改区域 ⚠️ ---
-        response = ss.post(
-            login_url, # 使用变量
-            json={
-                "headerInfos": {
-                    "code": "userLoginNormal",
-                    "timestamp": timestamp,
-                    "broadAccount": "",
-                    "broadToken": "",
-                    "clientType": "#11.3.0#channel35#Xiaomi Redmi K30 Pro#",
-                    "shopId": "20002",
-                    "source": "110003",
-                    "sourcePassword": "Sid98s",
-                    "token": "",
-                    "userLoginName": encode_phone(phone)
-                },
-                "content": {
-                    "attach": "test",
-                    "fieldData": {
-                        "loginType": "4",
-                        "accountType": "",
-                        "loginAuthCipherAsymmertric": b64_encrypt_rsa(loginAuthCipherAsymmertric),
-                        "deviceUid": uuid[0] + uuid[1] + uuid[2],
-                        "phoneNum": encode_phone(phone),
-                        "isChinatelecom": "0",
-                        "systemVersion": "12",
-                        "authentication": encode_phone(password)
-                    }
-                }
+    loginAuthCipherAsymmertric = f"Xiaomi 20 8.0.0.{android_id[:12]}{phone}{timestamp}{password}0$$$0."
+    body = {
+        "headerInfos": {
+            "code": "userLoginNormal",
+            "timestamp": timestamp,
+            "broadAccount": "",
+            "broadToken": "",
+            "clientType": "#11.0.0#channel8#Xiaomi 20#",
+            "shopId": "20002",
+            "source": "110003",
+            "sourcePassword": "Sid98s",
+            "token": "",
+            "userLoginName": encode_phone(phone)
+        },
+        "content": {
+            "attach": "test",
+            "fieldData": {
+                "loginType": "4",
+                "accountType": "",
+                "loginAuthCipherAsymmertric": b64_encrypt_rsa(loginAuthCipherAsymmertric),
+                "deviceUid": "",
+                "phoneNum": encode_phone(phone),
+                "isChinatelecom": "",
+                "systemVersion": "8.0.0",
+                "androidId": encode_phone(android_id),
+                "loginAuthCipher": "",
+                "authentication": encode_phone(password)
             }
-        )
+        }
+    }
 
-        if response.status_code != 200:
-            printn(f"️ L️【{phone}】登录请求状态码异常: {response.status_code}，响应内容: {response.text[:200]}")
-            return False
+    try:
+        resp = session.post(
+            'https://appgologin.189.cn:9031/login/client/userLoginNormal',
+            json=body,
+            timeout=30
+        )
+        if resp.status_code != 200:
+            printn(f"[登录v2失败] {m_phone} HTTP状态码 {resp.status_code}")
+            return None
+
+        res = resp.json()
+        login_data = res.get('responseData', {}).get('data', {}).get('loginSuccessResult')
+        if not login_data:
+            err_msg = res.get('responseData', {}).get('data', {}).get('resultMsg') or '无loginSuccessResult'
+            printn(f"[登录v2失败] {m_phone}: {err_msg}")
+            return None
+
+        # 第二步：获取Ticket
+        xml = f'''<Request>
+            <HeaderInfos>
+                <Code>getSingle</Code>
+                <Timestamp>{datetime.datetime.now().strftime("%Y%m%d%H%M%S")}</Timestamp>
+                <BroadAccount></BroadAccount>
+                <BroadToken></BroadToken>
+                <ClientType>#9.6.1#channel50#iPhone 14 Pro Max#</ClientType>
+                <ShopId>20002</ShopId>
+                <Source>110003</Source>
+                <SourcePassword>Sid98s</SourcePassword>
+                <Token>{login_data["token"]}</Token>
+                <UserLoginName>{phone}</UserLoginName>
+            </HeaderInfos>
+            <Content>
+                <Attach>test</Attach>
+                <FieldData>
+                    <TargetId>{encrypt_des3(login_data["userId"])}</TargetId>
+                    <Url>4a6862274835b451</Url>
+                </FieldData>
+            </Content>
+        </Request>'''
+        xml_resp = session.post(
+            'https://appgologin.189.cn:9031/map/clientXML',
+            data=xml,
+            headers={'Content-Type': 'application/xml'},
+            timeout=30
+        )
+        if xml_resp.status_code != 200:
+            printn(f"[获取Ticket失败] {m_phone} 状态码 {xml_resp.status_code}")
+            return None
+
+        xml_text = xml_resp.text
+        if '过期' in xml_text or '校验错误' in xml_text:
+            printn(f"[获取Ticket失败] {m_phone}: {xml_text[:50]}")
+            return None
+
+        if '<Ticket>' not in xml_text:
+            printn(f"[Ticket异常] {m_phone} 响应无Ticket标签")
+            return None
 
         try:
-            r = response.json()
-        except json.JSONDecodeError:
-            printn(f"️ L️【{phone}】登录响应解析失败，响应内容: {response.text[:200]}")
-            return False
+            ticket = xml_text.split('<Ticket>')[1].split('</Ticket>')[0]
+            uid = decrypt_des3(ticket)
+        except Exception as e:
+            printn(f"[解析Ticket失败] {m_phone}: {e}")
+            return None
 
-        l = r['responseData']['data']['loginSuccessResult']
-        if l:
-            ticket = get_ticket(phone, l['userId'], l['token'], ss)
-            if ticket and debug:
-                print(f'✔️ {phone} 获取ticket成功: {ticket[:15]}...')
-            return ticket
-        else:
-            printn(f"️ L️【{phone}】登录请求成功，但服务器返回登录失败: {r.get('responseHeader', {}).get('msg', '未知原因')}，完整响应: {r}")
-            return False
+        # 第三步：统一登录获取Bearer（可选，后续可能用到）
+        # 注意：原抢购逻辑不依赖Bearer，仅需ticket，但这里保留获取
+        auth_body = json.dumps({"ticket": uid, "backUrl": "https%3A%2F%2Fwapact.189.cn%3A9001", "platformCode": "P201010301", "loginType": 2})
+        # 使用AES加密（原脚本未定义，但此处不需要，因为原抢购流程使用ticket即可）
+        # 原脚本中的getSign使用ticket，所以无需Bearer，注释掉统一登录步骤
+
+        user_info = {
+            **login_data,
+            'uid': uid,
+            'phoneNbr': phone,
+            'ticket': uid   # 兼容后续
+        }
+        printn(f"[登录v2成功] {m_phone} 获取ticket成功")
+        return user_info
     except Exception as e:
-        printn(f"💥【{phone}】登录时发生未知异常: {e}")
+        printn(f"[登录v2异常] {m_phone}: {e}")
         traceback.print_exc()
-        return False
+        return None
+
+# =================== 原抢购相关函数（仅替换登录调用） ===================
 
 def getSign(ticket, session, rs_cookies):
     try:
@@ -240,7 +289,7 @@ def getLevelRightsList(phone, accId, session):
         value = {"type": "hg_qd_djqydh", "accId": accId, "shopId": "20001"}
         paraV = encrypt_para_rsa_new(value)
         response = session.post(
-            'https://wappark.189.cn/jt-sign/paradise/queryLevelRightInfo', # 修正URL，移除末尾空格
+            'https://wappark.189.cn/jt-sign/paradise/queryLevelRightInfo',
             json={"para": paraV}
         )
         try:
@@ -257,7 +306,7 @@ def getLevelRightsList(phone, accId, session):
         print(f"❌ getLevelRightsList 异常: {e}")
         return None
 
-# === 🛡️ 终极加固版异步抢购函数 ===
+# === 异步抢购函数（不变） ===
 async def async_staggered_burst_worker(
     session, phone, rightsId, accId, sign, rs_cookies,
     global_stop_event, local_stop_event,
@@ -278,16 +327,15 @@ async def async_staggered_burst_worker(
         paraV = encrypt_para_rsa_new(value)
         headers = {
             "sign": sign,
-            "Referer": "https://wappark.189.cn/resources/dist/signInActivity.html", # 修正URL，移除末尾空格
+            "Referer": "https://wappark.189.cn/resources/dist/signInActivity.html",
             "User-Agent": "Mozilla/5.0 (Linux; Android 13; 22081212C Build/TKQ1.220829.002) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.5112.97 Mobile Safari/537.36"
         }
 
-        url = "https://wappark.189.cn/jt-sign/paradise/receiverRights" # 修正URL，移除末尾空格
+        url = "https://wappark.189.cn/jt-sign/paradise/receiverRights"
 
         async with session.post(url, json={"para": paraV}, cookies=rs_cookies, headers=headers) as response:
             request_time = datetime.datetime.now().strftime('%H:%M:%S.%f')[:-3]
 
-            # 安全读取响应体（处理所有异常）
             text = ""
             try:
                 text = await response.text(encoding='utf-8', errors='replace')
@@ -297,7 +345,6 @@ async def async_staggered_burst_worker(
             except Exception as e:
                 text = f"[响应读取异常: {type(e).__name__} - {str(e)}]"
 
-            # 尝试解析 JSON（不依赖 Content-Type）
             res_json = {}
             res_text = ""
             try:
@@ -312,7 +359,6 @@ async def async_staggered_burst_worker(
             except (json.JSONDecodeError, ValueError, TypeError):
                 res_text = f"非JSON响应: {text[:100]}"
 
-            # 业务逻辑判断
             if "已领完" in res_text or "活动已结束" in res_text:
                 printn(f"💨【{phone}】@{request_time} [任务{task_index}] 已售罄! 停止该账号后续请求。")
                 if not local_stop_event.is_set():
@@ -366,7 +412,7 @@ def run_attack_campaign(phone, ticket, ss, global_stop_event, enable_ruishu, res
 
         ss.headers.update({
             "sign": sign,
-            "Referer": "https://wappark.189.cn/resources/dist/signInActivity.html" # 修正URL，移除末尾空格
+            "Referer": "https://wappark.189.cn/resources/dist/signInActivity.html"
         })
         rightsIds = getLevelRightsList(phone, accId, ss)
         if not rightsIds:
@@ -395,7 +441,7 @@ async def run_async_bursts(phone, rightsId, accId, sign, rs_cookies, global_stop
 
     local_stop_event = AsyncioEvent()
     connector = aiohttp.TCPConnector(ssl=ssl.create_default_context(cafile=certifi.where()))
-    timeout = aiohttp.ClientTimeout(total=15, connect=10)  # 总超时15秒，连接10秒
+    timeout = aiohttp.ClientTimeout(total=15, connect=10)
 
     async with aiohttp.ClientSession(connector=connector, timeout=timeout) as async_session:
         tasks = [
@@ -408,15 +454,35 @@ async def run_async_bursts(phone, rightsId, accId, sign, rs_cookies, global_stop
         ]
         await asyncio.gather(*tasks, return_exceptions=True)
 
-def process_account(phoneV, global_stop_event, enable_ruishu, result_log, result_lock, file_lock, num_accounts_to_run):
+# =================== 修改后的账号处理函数 ===================
+def process_account(account_str, global_stop_event, enable_ruishu, result_log, result_lock, file_lock, num_accounts_to_run):
+    """
+    账号格式：手机号@密码@AndroidID
+    """
+    parts = account_str.split('@')
+    if len(parts) < 3:
+        printn(f"⚠️ 账号格式错误：缺少AndroidID，应为 '手机号@密码@AndroidID'，实际为 '{account_str}'，跳过该账号。")
+        # 记录失败状态
+        with result_lock:
+            phone = parts[0] if parts else 'unknown'
+            result_log[phone] = {'status': 'LOGIN_FAIL', 'message': '缺少AndroidID'}
+        return
+
+    phone, password, android_id = parts[0], parts[1], parts[2]
+    if not android_id.strip():
+        printn(f"⚠️ 账号 {phone} 的AndroidID为空，请填写有效的AndroidID（从小程序“云链小栈”获取），跳过该账号。")
+        with result_lock:
+            result_log[phone] = {'status': 'LOGIN_FAIL', 'message': 'AndroidID为空'}
+        return
+
     if not debug:
         delay = random.uniform(0.1, 2.0)
         time.sleep(delay)
-        printn(f'👤【{phoneV.split("@")[0]}】(延迟{delay:.2f}s后) 开始登录...')
+        printn(f'👤【{phone}】(延迟{delay:.2f}s后) 开始登录...')
     else:
-        printn(f'👤【{phoneV.split("@")[0]}】开始登录...')
+        printn(f'👤【{phone}】开始登录...')
 
-    phone, password = phoneV.split('@')
+    # 创建会话
     ss = requests.session()
     ss.headers = {
         "User-Agent": "Mozilla/5.0 (Linux; Android 13; 22081212C Build/TKQ1.220829.002) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.5112.97 Mobile Safari/537.36"
@@ -425,31 +491,48 @@ def process_account(phoneV, global_stop_event, enable_ruishu, result_log, result
     ss.cookies.set_policy(BlockAll())
     ss.timeout = 30
 
-    ticket = userLoginNormal(phone, password, ss)
-    if ticket:
+    # 使用 login_v2 登录
+    user_info = login_v2(phone, password, android_id, ss)
+    if user_info:
+        ticket = user_info['uid']   # 即 ticket
         run_attack_campaign(phone, ticket, ss, global_stop_event, enable_ruishu, result_log, result_lock, file_lock, num_accounts_to_run)
     else:
         printn(f'❌【{phone}】登录失败')
         with result_lock:
             result_log[phone] = {'status': 'LOGIN_FAIL', 'message': '登录失败'}
 
+# =================== 主函数 ===================
 def main():
     start_time = datetime.datetime.now()
     PHONES = os.environ.get('dxqy')
     push_plus_token = os.environ.get('PUSH_PLUS_TOKEN')
     if not PHONES:
         printn("ℹ️ 未检测到环境变量 `dxqy`，将使用脚本内嵌的账号信息。")
-        PHONES = "你的手机号@你的服务密码"
-    all_accounts = [p.strip() for p in PHONES.split('&') if '@' in p and "你的手机号" not in p]
+        PHONES = "你的手机号@你的服务密码@你的AndroidID"  # 务必填写完整格式，AndroidID请从小程序“云链小栈”中获取
+    all_accounts = [p.strip() for p in PHONES.split('&') if p.strip() and '@' in p and "你的手机号" not in p]
     if not all_accounts:
-        printn("❌ 请在环境变量或脚本中设置正确的账号信息。")
+        printn("❌ 请在环境变量或脚本中设置正确的账号信息（格式：手机号@密码@AndroidID，AndroidID请从小程序“云链小栈”中获取）。")
         return
 
+    # 检查每个账号是否有AndroidID
+    valid_accounts = []
+    for acc in all_accounts:
+        parts = acc.split('@')
+        if len(parts) < 3 or not parts[2].strip():
+            printn(f"⚠️ 账号 '{acc}' 缺少AndroidID，将被跳过。请补充完整格式：手机号@密码@AndroidID，缺少AndroidID，格式应为 手机号@密码@AndroidID，AndroidID请从小程序“云链小栈”中获取。跳过该账号")
+            continue
+        valid_accounts.append(acc)
+
+    if not valid_accounts:
+        printn("❌ 没有有效的账号（均缺少AndroidID），缺少AndroidID，格式应为 手机号@密码@AndroidID，AndroidID请从小程序“云链小栈”中获取。跳过该账号。")
+        return
+
+    # 加载已领取记录
     claimed_data = load_claimed_accounts(claimed_log_file)
     current_month = datetime.datetime.now().strftime("%Y-%m")
     accounts_to_run = []
     skipped_accounts = []
-    for acc in all_accounts:
+    for acc in valid_accounts:
         phone = acc.split('@')[0]
         if claimed_data.get(phone) == current_month:
             skipped_accounts.append(f"✅ {phone[:3]}***{phone[-4:]}: 本月已领取")
@@ -457,7 +540,7 @@ def main():
             accounts_to_run.append(acc)
 
     printn("="*20 + " 账号过滤 " + "="*20)
-    print(f"总账号数: {len(all_accounts)}, 本次运行: {len(accounts_to_run)}, 本月已领取跳过: {len(skipped_accounts)}")
+    print(f"总有效账号数: {len(valid_accounts)}, 本次运行: {len(accounts_to_run)}, 本月已领取跳过: {len(skipped_accounts)}")
     for s in skipped_accounts:
         print(s)
     printn("="*52)
@@ -485,10 +568,10 @@ def main():
     with ThreadPoolExecutor(max_workers=len(accounts_to_run)) as executor:
         futures = [
             executor.submit(
-                process_account, phoneV, global_stop_event, ENABLE_RUISHU,
+                process_account, acc, global_stop_event, ENABLE_RUISHU,
                 result_log, result_lock, file_lock, num_accounts_to_run
             )
-            for phoneV in accounts_to_run
+            for acc in accounts_to_run
         ]
         wait(futures)
 
@@ -503,8 +586,8 @@ def main():
     if global_stop_event.is_set():
         final_state = '已售罄 (全局共识)'
 
-    for phone_str in accounts_to_run:
-        phone = phone_str.split('@')[0]
+    for acc in accounts_to_run:
+        phone = acc.split('@')[0]
         res = result_log.get(phone)
         if res:
             if res['status'] == 'SUCCESS':
@@ -514,9 +597,9 @@ def main():
         else:
             fail_accounts.append(f"ℹ️ {phone[:3]}***{phone[-4:]}: 未执行或无明确结果")
 
-    summary_content = (f"### 任务报告\n- **总耗时**: {duration:.2f} 秒\n- **最终状态**: {final_state}\n---\n### 成功/已领取列表 ({len(success_accounts)}/{len(all_accounts)})\n")
+    summary_content = (f"### 任务报告\n- **总耗时**: {duration:.2f} 秒\n- **最终状态**: {final_state}\n---\n### 成功/已领取列表 ({len(success_accounts)}/{len(valid_accounts)})\n")
     summary_content += "\n".join(success_accounts) if success_accounts else "无"
-    summary_content += f"\n\n### 失败/未成功列表 ({len(fail_accounts)}/{len(all_accounts)})\n"
+    summary_content += f"\n\n### 失败/未成功列表 ({len(fail_accounts)}/{len(valid_accounts)})\n"
     summary_content += "\n".join(fail_accounts) if fail_accounts else "无"
 
     printn("="*22 + " 抢购总结 " + "="*22)
@@ -526,12 +609,12 @@ def main():
     printn("🏁 所有账号的任务均已结束!")
 
 if __name__ == '__main__':
-    inadvance = -100          # 提前300毫秒
-    count_per_account = 5     # 建议3~5，根据稳定性调整
-    interval = 10             # 请求间隔15ms
+    inadvance = -100          # 提前100毫秒（可调）
+    count_per_account = 2     # 每账号抢购次数
+    interval = 1            # 请求间隔（毫秒）
     hour = 0
     minute = 0
-    debug = False             #测试开启True
+    debug = False             # 测试时改为True
     ENABLE_RUISHU = False
     claimed_log_file = "claimed_accounts.json"
 
